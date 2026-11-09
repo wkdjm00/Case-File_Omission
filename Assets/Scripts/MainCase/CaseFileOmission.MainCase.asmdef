@@ -1,0 +1,20 @@
+{
+    "name": "CaseFileOmission.MainCase",
+    "rootNamespace": "CaseFileOmission.MainCase",
+    "references": [
+        "CaseFileOmission.Core",
+        "CaseFileOmission.Endings",
+        "CaseFileOmission.Contracts",
+        "CaseFileOmission.Evidence",
+        "CaseFileOmission.NPC"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

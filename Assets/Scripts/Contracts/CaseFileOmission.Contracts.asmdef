@@ -1,0 +1,17 @@
+{
+    "name": "CaseFileOmission.Contracts",
+    "rootNamespace": "CaseFileOmission.Contracts",
+    "references": [
+        "CaseFileOmission.Core",
+        "CaseFileOmission.Room"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,37 @@
+{
+    "name": "CaseFileOmission.Tests.EditMode",
+    "rootNamespace": "CaseFileOmission.Tests",
+    "references": [
+        "CaseFileOmission.Core",
+        "CaseFileOmission.Contracts",
+        "CaseFileOmission.Evidence",
+        "CaseFileOmission.Reports",
+        "CaseFileOmission.NPC",
+        "CaseFileOmission.Meeting",
+        "CaseFileOmission.Organization",
+        "CaseFileOmission.Combat",
+        "CaseFileOmission.Police",
+        "CaseFileOmission.Endings",
+        "CaseFileOmission.Room",
+        "CaseFileOmission.ContractContent",
+        "CaseFileOmission.MainCase",
+        "CaseFileOmission.SaveLoad",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

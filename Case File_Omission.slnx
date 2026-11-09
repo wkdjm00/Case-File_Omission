@@ -1,4 +1,19 @@
 ﻿<Solution>
+  <Project Path="CaseFileOmission.Contracts.csproj" />
+  <Project Path="CaseFileOmission.Tests.EditMode.csproj" />
+  <Project Path="CaseFileOmission.SaveLoad.csproj" />
+  <Project Path="CaseFileOmission.ContractContent.csproj" />
+  <Project Path="CaseFileOmission.MainCase.csproj" />
+  <Project Path="CaseFileOmission.Meeting.csproj" />
+  <Project Path="CaseFileOmission.Evidence.csproj" />
+  <Project Path="CaseFileOmission.Core.csproj" />
+  <Project Path="CaseFileOmission.NPC.csproj" />
   <Project Path="Assembly-CSharp.csproj" />
+  <Project Path="CaseFileOmission.Police.csproj" />
+  <Project Path="CaseFileOmission.Room.csproj" />
+  <Project Path="CaseFileOmission.Organization.csproj" />
+  <Project Path="CaseFileOmission.Reports.csproj" />
+  <Project Path="CaseFileOmission.Endings.csproj" />
+  <Project Path="CaseFileOmission.Combat.csproj" />
   <Project Path="Assembly-CSharp-Editor.csproj" />
 </Solution>

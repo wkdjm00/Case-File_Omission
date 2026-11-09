@@ -1,0 +1,18 @@
+{
+    "name": "CaseFileOmission.Meeting",
+    "rootNamespace": "CaseFileOmission.Meeting",
+    "references": [
+        "CaseFileOmission.Core",
+        "CaseFileOmission.Evidence",
+        "CaseFileOmission.NPC"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
