@@ -79,7 +79,7 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
-        public void DecideAndAct_NoOneToTalkTo_MovesToAdjacentRoom()
+        public void DecideAndAct_NoOneToTalkTo_StaysInPlace()
         {
             var (registry, rooms, occupancy) = BuildScene();
             var npc = new NpcState("npc-1", "c1", NpcActualRole.Witness, NpcPersonality.Indifferent);
@@ -89,9 +89,40 @@ namespace CaseFileOmission.Tests
             var loop = new NpcActionLoop(registry, occupancy, rooms, new NpcInfoTransferService(new Random(1)));
             var result = loop.DecideAndAct("npc-1", "c1");
 
-            Assert.AreEqual(NpcActionType.Move, result.ActionType);
-            Assert.IsTrue(rooms.AreConnected(HouseLayoutFactory.LivingRoom, result.TargetId));
-            Assert.AreEqual(result.TargetId, occupancy.GetRoom("npc-1"), "실제로 이동이 적용되어 있어야 한다.");
+            // 07 확정: 할 일이 없으면 대기한다(무작위 이동하지 않는다).
+            Assert.AreEqual(NpcActionType.Stay, result.ActionType);
+            Assert.AreEqual(HouseLayoutFactory.LivingRoom, occupancy.GetRoom("npc-1"));
+        }
+
+        [Test]
+        public void DecideAndAct_AlreadyTransferredInfo_IsNotRetried()
+        {
+            var (registry, rooms, occupancy) = BuildScene();
+
+            var informed = new NpcState("npc-informed", "c1", NpcActualRole.Witness, NpcPersonality.Indifferent);
+            informed.LearnInfo("secret-1", NpcJudgement.Believe);
+            var uninformed = new NpcState("npc-uninformed", "c1", NpcActualRole.Witness, NpcPersonality.Indifferent);
+            registry.Add(informed);
+            registry.Add(uninformed);
+            occupancy.PlaceAt("npc-informed", HouseLayoutFactory.LivingRoom);
+            occupancy.PlaceAt("npc-uninformed", HouseLayoutFactory.LivingRoom);
+
+            // roll 0.0 < 최소 5%이므로 전달은 반드시 성공한다.
+            var transfer = new NpcInfoTransferService(new FixedRandom(0.0));
+            var loop = new NpcActionLoop(registry, occupancy, rooms, transfer);
+            var first = loop.DecideAndAct("npc-uninformed", "c1");
+            Assert.AreEqual(InfoTransferOutcome.Succeeded, first.TransferResult.Outcome);
+
+            var second = loop.DecideAndAct("npc-uninformed", "c1");
+            Assert.AreEqual(NpcActionType.Stay, second.ActionType, "같은 쌍에 이미 전달한 정보는 반복 전달하지 않고, 할 일이 없으면 대기한다.");
+        }
+
+        private sealed class FixedRandom : Random
+        {
+            private readonly double _value;
+            public FixedRandom(double value) { _value = value; }
+            public override double NextDouble() => _value;
+            protected override double Sample() => _value;
         }
 
         [Test]
@@ -111,7 +142,7 @@ namespace CaseFileOmission.Tests
             var loop = new NpcActionLoop(registry, occupancy, rooms, new NpcInfoTransferService(new Random(1)));
             var result = loop.DecideAndAct("npc-1", "c1");
 
-            Assert.AreEqual(NpcActionType.Move, result.ActionType, "다른 방에 있는 NPC와는 정보 전달을 시도하지 않는다.");
+            Assert.AreEqual(NpcActionType.Stay, result.ActionType, "다른 방에 있는 NPC와는 정보 전달을 시도하지 않는다.");
         }
     }
 }

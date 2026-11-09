@@ -48,6 +48,20 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void MarkHeldByNpc_ChangesWorldStateOnly_RecordStaysInReport()
+        {
+            var repo = new ClueRepository();
+            repo.Discover(new ClueDefinition("clue-1", "contract-1"));
+            repo.Drop("clue-1");
+
+            repo.GetRecord("clue-1").MarkHeldByNpc();
+
+            Assert.AreEqual(ClueWorldState.HeldByNpc, repo.GetRecord("clue-1").WorldState);
+            Assert.IsTrue(repo.Exists("clue-1"), "NPC가 주워 가도 보고서 기록은 남는다(06 확정).");
+            CollectionAssert.DoesNotContain(repo.GetHeldByPlayerClueIds("contract-1"), "clue-1");
+        }
+
+        [Test]
         public void GetHeldByPlayerClueIds_ExcludesDroppedClues()
         {
             var repo = new ClueRepository();

@@ -29,17 +29,18 @@ namespace CaseFileOmission.NPC
     /// 결정한다. 회유(NpcPersuasionService)는 플레이어의 명시적 행동이라 이 자동 루프에 포함하지 않는다.
     ///
     /// 범위 한정: 성격별 우선순위·목표·전략적 판단(§5-5)은 포함하지 않는다. 지금은
-    /// "같은 방에 정보를 가진 상대가 있으면 전달을 시도하고, 없으면 인접한 방으로 이동한다"는
-    /// 최소 규칙만 구현한다.
+    /// "같은 방에 정보를 가진 상대가 있으면 전달을 시도하고, 없으면 대기한다"는 최소 규칙만 구현한다.
+    /// 07 확정 "NPC는 별도의 일상 행동 시스템을 갖지 않는다. 할 일이 없으면 대기한다"에 따라 예전의
+    /// 무작위 인접 이동은 제거했다. 일정 이동·막힌 경로·턴 중복 방지·관계 의심도 반영은 <see cref="NpcBehaviorPlanner"/>가 담당한다.
     /// </summary>
     public sealed class NpcActionLoop
     {
         private readonly NpcRegistry _registry;
         private readonly RoomOccupancyTracker _occupancy;
-        private readonly RoomGraph _rooms;
         private readonly NpcInfoTransferService _transferService;
-        private readonly Random _random;
 
+        /// <param name="rooms">이전 호출부와의 호환용. 무작위 이동을 제거해 더 이상 쓰지 않는다.</param>
+        /// <param name="random">이전 호출부와의 호환용. 무작위 이동을 제거해 더 이상 쓰지 않는다.</param>
         public NpcActionLoop(
             NpcRegistry registry,
             RoomOccupancyTracker occupancy,
@@ -49,9 +50,8 @@ namespace CaseFileOmission.NPC
         {
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
             _occupancy = occupancy ?? throw new ArgumentNullException(nameof(occupancy));
-            _rooms = rooms ?? throw new ArgumentNullException(nameof(rooms));
+            if (rooms == null) throw new ArgumentNullException(nameof(rooms));
             _transferService = transferService ?? throw new ArgumentNullException(nameof(transferService));
-            _random = random ?? new Random();
         }
 
         public NpcActionResult DecideAndAct(string npcId, string contractId)
@@ -74,7 +74,9 @@ namespace CaseFileOmission.NPC
 
             foreach (var other in sameRoomNpcs)
             {
-                string infoToShare = other.KnownInfoIds.FirstOrDefault(info => !actor.Knows(info));
+                // 같은 쌍에 이미 전달한 정보는 반복 전달하지 않는다(07 확정).
+                string infoToShare = other.KnownInfoIds.FirstOrDefault(info =>
+                    !actor.Knows(info) && !_transferService.HasTransferred(other.NpcId, npcId, info));
                 if (infoToShare == null)
                     continue;
 
@@ -97,14 +99,8 @@ namespace CaseFileOmission.NPC
                 };
             }
 
-            var adjacentRooms = _rooms.GetAdjacentRooms(currentRoom).ToList();
-            if (adjacentRooms.Count == 0)
-                return new NpcActionResult { ActionType = NpcActionType.Stay, ActorId = npcId };
-
-            string destination = adjacentRooms[_random.Next(adjacentRooms.Count)];
-            _occupancy.TryMove(npcId, destination);
-
-            return new NpcActionResult { ActionType = NpcActionType.Move, ActorId = npcId, TargetId = destination };
+            // 07 확정: 할 일이 없으면 대기한다.
+            return new NpcActionResult { ActionType = NpcActionType.Stay, ActorId = npcId };
         }
     }
 }
