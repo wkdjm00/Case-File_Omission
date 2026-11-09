@@ -5,6 +5,7 @@
   <Project Path="CaseFileOmission.ContractContent.csproj" />
   <Project Path="CaseFileOmission.MainCase.csproj" />
   <Project Path="CaseFileOmission.Meeting.csproj" />
+  <Project Path="ClaudeHand.Editor.csproj" />
   <Project Path="CaseFileOmission.Evidence.csproj" />
   <Project Path="CaseFileOmission.Core.csproj" />
   <Project Path="CaseFileOmission.NPC.csproj" />
