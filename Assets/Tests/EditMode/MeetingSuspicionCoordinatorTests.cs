@@ -34,16 +34,17 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
-        public void ApplyLieAttemptResult_Success_BehavesLikeAccepted()
+        public void ApplyLieAttemptResult_Success_IsNotTreatedAsAcceptance()
         {
+            // 06 확정: 거짓말 성공은 사실로 믿었다는 뜻이 아니다 — 수용 판단이 따로 내려지기 전에는 의심도가 줄지 않는다.
             var suspicionService = new PoliceSuspicionService();
             suspicionService.ApplyBatch(PoliceRoster.PoliceA, "player", new[] { 50f });
             var coordinator = new MeetingSuspicionCoordinator(suspicionService);
 
             var lieResult = new LieAttemptResult { Success = true, ProbabilityUsed = 80f };
-            float result = coordinator.ApplyLieAttemptResult(PoliceRoster.PoliceA, "player", lieResult, 1, 0, false);
+            float result = coordinator.ApplyLieAttemptResult(PoliceRoster.PoliceA, "player", lieResult, 0);
 
-            Assert.AreEqual(46f, result); // 50 - 4
+            Assert.AreEqual(50f, result);
         }
 
         [Test]
@@ -53,7 +54,7 @@ namespace CaseFileOmission.Tests
             var coordinator = new MeetingSuspicionCoordinator(suspicionService);
 
             var lieResult = new LieAttemptResult { Success = false, ProbabilityUsed = 20f };
-            float result = coordinator.ApplyLieAttemptResult(PoliceRoster.PoliceA, "player", lieResult, 0, 1, false);
+            float result = coordinator.ApplyLieAttemptResult(PoliceRoster.PoliceA, "player", lieResult, 1);
 
             Assert.AreEqual(8f, result);
         }

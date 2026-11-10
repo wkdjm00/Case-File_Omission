@@ -231,21 +231,65 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
-        public void BlockedRoute_WithoutAlternative_WaitsThenAbandonsGoal_NoInfiniteRetry()
+        public void BlockedRoute_WithoutAlternative_WaitsThreeTurns_ThenStopsRepeating_KeepsDestination()
         {
             var s = new Scene();
             s.AddNpc("npc-1", HouseLayoutFactory.LivingRoom);
             var schedule = new NpcSchedule("npc-1");
             schedule.TryAdd(0, 100, HouseLayoutFactory.Bedroom);
             s.Planner.SetSchedule(schedule);
-            s.Planner.IsRoomBlocked = room => room == HouseLayoutFactory.Hallway;
+            bool hallwayBlocked = true;
+            s.Planner.IsRoomBlocked = room => hallwayBlocked && room == HouseLayoutFactory.Hallway;
 
             Assert.AreEqual(NpcBehaviorStatus.BlockedWaiting, s.Planner.Act("t1", "npc-1", 0).Status);
-            Assert.AreEqual(NpcBehaviorStatus.ScheduleGoalAbandoned, s.Planner.Act("t2", "npc-1", 10).Status);
+            Assert.AreEqual(NpcBehaviorStatus.BlockedWaiting, s.Planner.Act("t2", "npc-1", 10).Status);
+            Assert.AreEqual(NpcBehaviorStatus.BlockedWaiting, s.Planner.Act("t3", "npc-1", 20).Status);
+            Assert.AreEqual(NpcBehaviorStatus.MoveSuspendedAfterBlocked, s.Planner.Act("t4", "npc-1", 30).Status,
+                "07 2026-11-10: 누적 3턴이 지나면 그 이동을 반복하지 않는다.");
 
-            var third = s.Planner.Act("t3", "npc-1", 20);
-            Assert.AreEqual(NpcBehaviorKind.Wait, third.Kind, "포기한 일정 목표는 같은 일정 칸 동안 다시 시도하지 않는다.");
+            var fifth = s.Planner.Act("t5", "npc-1", 40);
+            Assert.AreEqual(NpcBehaviorKind.Wait, fifth.Kind, "멈춘 이동은 길이 막혀 있는 동안 다시 시도하지 않는다.");
             Assert.AreEqual(HouseLayoutFactory.LivingRoom, s.Occupancy.GetRoom("npc-1"));
+
+            hallwayBlocked = false;
+            var sixth = s.Planner.Act("t6", "npc-1", 50);
+            Assert.AreEqual(NpcBehaviorKind.MoveBySchedule, sixth.Kind, "목적지는 유지되므로 길이 열리면 다시 이동한다.");
+            Assert.AreEqual(HouseLayoutFactory.Hallway, s.Occupancy.GetRoom("npc-1"));
+        }
+
+        [Test]
+        public void UrgentAvoid_IsChosenBeforeOtherCandidates()
+        {
+            var s = new Scene();
+            var npc = s.AddNpc("npc-a", HouseLayoutFactory.LivingRoom, NpcPersonality.Guilty);
+            npc.LearnInfo("info-1", NpcJudgement.Believe);
+            s.AddNpc("npc-b", HouseLayoutFactory.LivingRoom);
+            var source = new ListSource();
+            source.Candidates.Add(new NpcBehaviorCandidate { Kind = NpcBehaviorKind.Avoid, IsUrgent = true, Execute = () => { } });
+            s.Planner.AddCandidateSource(source);
+
+            Assert.AreEqual(NpcBehaviorKind.Avoid, s.Planner.Act("t1", "npc-a", 0).Kind);
+        }
+
+        [TestCase(NpcPersonality.Suspicious, NpcBehaviorKind.Investigate, 3f)]
+        [TestCase(NpcPersonality.Guilty, NpcBehaviorKind.ShareInfo, 2f)]
+        [TestCase(NpcPersonality.Jealous, NpcBehaviorKind.Question, 2f)]
+        [TestCase(NpcPersonality.Timid, NpcBehaviorKind.Avoid, 3f)]
+        [TestCase(NpcPersonality.Indifferent, NpcBehaviorKind.Investigate, 1f)]
+        public void PersonalityWeights_FollowConfirmedTable(NpcPersonality personality, NpcBehaviorKind kind, float expected)
+        {
+            Assert.AreEqual(expected, NpcPersonalityTendencies.WeightFor(personality, new NpcBehaviorCandidate { Kind = kind }));
+        }
+
+        [Test]
+        public void DependentAndBlindlyTrusting_OnlyPreferSharingWithTrustedTarget()
+        {
+            var untrusted = new NpcBehaviorCandidate { Kind = NpcBehaviorKind.ShareInfo, TargetIsTrusted = false };
+            var trusted = new NpcBehaviorCandidate { Kind = NpcBehaviorKind.ShareInfo, TargetIsTrusted = true };
+
+            Assert.AreEqual(1f, NpcPersonalityTendencies.WeightFor(NpcPersonality.Dependent, untrusted));
+            Assert.AreEqual(3f, NpcPersonalityTendencies.WeightFor(NpcPersonality.Dependent, trusted));
+            Assert.AreEqual(3f, NpcPersonalityTendencies.WeightFor(NpcPersonality.BlindlyTrusting, trusted));
         }
 
         [Test]
@@ -362,16 +406,20 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
-        public void PersonalitiesMissingFromBehaviorTable_AreFlagged()
+        public void AllOfficialPersonalities_AreDescribedInBehaviorTable()
         {
-            Assert.IsFalse(NpcPersonalityTendencies.IsDescribedInBehaviorTable(NpcPersonality.Jealous));
-            Assert.IsFalse(NpcPersonalityTendencies.IsDescribedInBehaviorTable(NpcPersonality.Dependent));
-            Assert.IsTrue(NpcPersonalityTendencies.IsDescribedInBehaviorTable(NpcPersonality.Secretive));
-            CollectionAssert.IsEmpty(NpcPersonalityTendencies.GetPreferredKinds(NpcPersonality.Jealous));
+            // 07 2026-11-10: 공식 성격 10종은 08 목록으로 통일되었고 모두 행동 표에 있다.
+            foreach (NpcPersonality p in Enum.GetValues(typeof(NpcPersonality)))
+                Assert.IsTrue(NpcPersonalityTendencies.IsDescribedInBehaviorTable(p));
+            Assert.AreEqual(10, Enum.GetValues(typeof(NpcPersonality)).Length);
+            CollectionAssert.IsEmpty(NpcPersonalityTendencies.GetPreferredKinds(NpcPersonality.Indifferent));
         }
 
         [TestCase(0f, 50f)]
-        [TestCase(15f, 45f)]
+        [TestCase(9f, 50f)]
+        [TestCase(10f, 45f)]
+        [TestCase(34f, 45f)]
+        [TestCase(35f, 35f)]
         [TestCase(50f, 35f)]
         public void SenderSuspicionTowardReceiver_UsesConfirmedTransferModifiers(float suspicion, float expectedChance)
         {

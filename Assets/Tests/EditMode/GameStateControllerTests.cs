@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using CaseFileOmission.Core;
 using NUnit.Framework;
 
@@ -66,19 +66,19 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
-        public void AdvanceTimeBlock_MorningToAfternoon_SameDay()
+        public void AdvanceTimeBlock_MorningToEvening_SameDay()
         {
             var controller = new GameStateController();
             controller.BeginContract("c1");
 
             controller.AdvanceTimeBlock();
 
-            Assert.AreEqual(TimeBlock.Afternoon, controller.CurrentTimeBlock);
+            Assert.AreEqual(TimeBlock.Evening, controller.CurrentTimeBlock);
             Assert.AreEqual(1, controller.CurrentDay);
         }
 
         [Test]
-        public void AdvanceTimeBlock_AfternoonToMorning_IncrementsDay()
+        public void AdvanceTimeBlock_EveningToMorning_IncrementsDay()
         {
             var controller = new GameStateController();
             controller.BeginContract("c1");
@@ -116,7 +116,7 @@ namespace CaseFileOmission.Tests
 
             controller.AdvanceTimeBlock();
 
-            Assert.AreEqual(TimeBlock.Afternoon, reportedBlock);
+            Assert.AreEqual(TimeBlock.Evening, reportedBlock);
             Assert.AreEqual(1, reportedDay);
         }
     }

@@ -43,8 +43,9 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
-        public void TryAcquire_NpcAtLimit_ReplaceApproved_SwapsOldest()
+        public void TryAcquire_NpcAtLimit_NeverReplaces_EvenWithCallback()
         {
+            // 06 §8 확정: 기본 NPC는 단서 교체를 판단하지 않는다.
             var manager = new EvidenceCapacityManager();
             manager.TryAcquire("npc-1", HolderType.Npc, "clue-1");
             manager.TryAcquire("npc-1", HolderType.Npc, "clue-2");
@@ -52,10 +53,23 @@ namespace CaseFileOmission.Tests
 
             var result = manager.TryAcquire("npc-1", HolderType.Npc, "clue-4", (oldId, newId) => true);
 
+            Assert.AreEqual(EvidenceAcquisitionOutcome.RejectedAtCapacity, result.Outcome);
+            CollectionAssert.Contains(manager.GetHeldClues("npc-1"), "clue-1");
+            CollectionAssert.DoesNotContain(manager.GetHeldClues("npc-1"), "clue-4");
+        }
+
+        [Test]
+        public void TryAcquire_PoliceAtLimit_ReplaceApproved_SwapsOldest()
+        {
+            var manager = new EvidenceCapacityManager();
+            for (int i = 0; i < 5; i++)
+                manager.TryAcquire("police-A", HolderType.Police, $"clue-{i}");
+
+            var result = manager.TryAcquire("police-A", HolderType.Police, "clue-new", (oldId, newId) => true);
+
             Assert.AreEqual(EvidenceAcquisitionOutcome.Replaced, result.Outcome);
-            Assert.AreEqual("clue-1", result.ReplacedClueId);
-            CollectionAssert.DoesNotContain(manager.GetHeldClues("npc-1"), "clue-1");
-            CollectionAssert.Contains(manager.GetHeldClues("npc-1"), "clue-4");
+            Assert.AreEqual("clue-0", result.ReplacedClueId);
+            CollectionAssert.Contains(manager.GetHeldClues("police-A"), "clue-new");
         }
 
         [Test]

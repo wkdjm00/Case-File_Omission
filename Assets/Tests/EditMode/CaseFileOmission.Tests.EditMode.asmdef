@@ -16,6 +16,7 @@
         "CaseFileOmission.ContractContent",
         "CaseFileOmission.MainCase",
         "CaseFileOmission.SaveLoad",
+        "CaseFileOmission.Game",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

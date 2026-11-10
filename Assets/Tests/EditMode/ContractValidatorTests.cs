@@ -40,7 +40,7 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
-        public void Validate_SubCrimeDuplicatesPrimary_FailsWithContradiction()
+        public void Validate_SubCrimeWithoutLink_FailsWithContradiction()
         {
             var contract = new ContractInstance("c1")
             {
@@ -48,12 +48,29 @@ namespace CaseFileOmission.Tests
                 LocationCategory = LocationCategory.Indoor,
                 Location = StubLocation.House
             };
-            contract.SubCrimes.Add(CrimeType.Murder);
+            contract.SubCrimes.Add(CrimeType.TheftRobbery);
             contract.Truth.TimelineEvents.Add("사건 발생");
 
             var result = new ContractValidator().Validate(contract);
 
             Assert.Contains(ContractValidationErrorCode.CONTRADICTION, result.Errors);
+        }
+
+        [Test]
+        public void Validate_LinkedSubCrimeOfSameTypeAsPrimary_IsAllowed()
+        {
+            var contract = new ContractInstance("c1")
+            {
+                PrimaryCrimeType = CrimeType.Murder,
+                LocationCategory = LocationCategory.Indoor,
+                Location = StubLocation.House
+            };
+            contract.AddSubCrime(CrimeType.Murder, "목격자 입막음", "c1-witness-1");
+            contract.Truth.TimelineEvents.Add("사건 발생");
+
+            var result = new ContractValidator().Validate(contract);
+
+            Assert.IsFalse(result.Errors.Contains(ContractValidationErrorCode.CONTRADICTION));
         }
 
         [Test]

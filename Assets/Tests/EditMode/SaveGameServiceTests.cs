@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using CaseFileOmission.Core;
 using CaseFileOmission.Endings;
 using CaseFileOmission.MainCase;
@@ -41,7 +41,7 @@ namespace CaseFileOmission.Tests
 
             Assert.AreEqual("c1", target.GameState.CurrentContractId);
             Assert.AreEqual(GamePhase.Investigation, target.GameState.CurrentPhase);
-            Assert.AreEqual(TimeBlock.Afternoon, target.GameState.CurrentTimeBlock);
+            Assert.AreEqual(TimeBlock.Evening, target.GameState.CurrentTimeBlock);
             Assert.AreEqual(1, target.GameState.CurrentDay);
         }
 

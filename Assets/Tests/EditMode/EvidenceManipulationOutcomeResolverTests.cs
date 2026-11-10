@@ -28,6 +28,29 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void BaseChance_IsConfirmedSeventyPercent()
+        {
+            // 사용자 확정(2026-11-10 C3): 물리 증거 조작 성공 확률 70%. 거짓 알리바이 확률(70%)과는 별개 규칙이다.
+            Assert.AreEqual(70f, EvidenceManipulationOutcomeResolver.BaseChance);
+            Assert.AreEqual(5f, EvidenceManipulationOutcomeResolver.MinChance);
+            Assert.AreEqual(95f, EvidenceManipulationOutcomeResolver.MaxChance);
+        }
+
+        [Test]
+        public void Attempt_BeforeUnlock_IsLocked_WithoutRollOrRecord()
+        {
+            var repo = BuildRepositoryWithClues("clue-1");
+            var service = new EvidenceManipulationService(repo, new Random(1));
+            var resolver = new EvidenceManipulationOutcomeResolver(service, new Random(1)) { UnlockCondition = () => false };
+
+            var result = resolver.Attempt(ManipulationType.Distort, "clue-1", "player", false, false, false, false);
+
+            Assert.AreEqual(ManipulationOutcome.Locked, result.Outcome);
+            Assert.AreEqual(0, service.History.Count);
+            Assert.AreEqual(0, resolver.FailedAttempts.Count);
+        }
+
+        [Test]
         public void Attempt_AllNegativeModifiers_LowersChance()
         {
             var repo = BuildRepositoryWithClues("clue-1");

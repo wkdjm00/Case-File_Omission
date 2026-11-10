@@ -93,6 +93,45 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void MainStoryEnding_DoesNotBlockLaterGameOver()
+        {
+            // 10 확정: 메인 서사 엔딩 뒤에도 의뢰 반복 진행은 계속된다 — 그 뒤의 체포 등은 여전히 실행되어야 한다.
+            var suspicion = new PoliceSuspicionService();
+            var executor = new EndingExecutor(new GameEndEvaluator(suspicion, new OrganizationState()));
+
+            Assert.IsTrue(executor.TryExecute(GameEndingType.BossHiddenEnding));
+            Assert.IsFalse(executor.TryExecute(GameEndingType.RebelRecruitAccepted), "메인 서사 엔딩은 한 번만 실행된다.");
+
+            suspicion.ApplyBatch(PoliceRoster.PoliceA, "player", new[] { 100f });
+            Assert.IsTrue(executor.TryEvaluateAndExecute("player", new List<string>()));
+            Assert.AreEqual(GameEndingType.Arrest, executor.GameOverEnding);
+            Assert.AreEqual(GameEndingType.BossHiddenEnding, executor.MainNarrativeEnding);
+            Assert.IsTrue(executor.ShouldStopGameLoop);
+        }
+
+        [Test]
+        public void Arrest_UsesHandlerPolice_WhenContractIsActive()
+        {
+            // 07 2026-11-09: 배정된 경찰의 의심도 100이 체포 조건이다.
+            var suspicion = new PoliceSuspicionService();
+            suspicion.ApplyBatch(PoliceRoster.PoliceB, "player", new[] { 100f });
+            var evaluator = new GameEndEvaluator(suspicion, new OrganizationState());
+
+            Assert.AreEqual(GameEndingType.None, evaluator.EvaluateAutomaticEndings("player", new List<string>(), PoliceRoster.PoliceA));
+            Assert.AreEqual(GameEndingType.Arrest, evaluator.EvaluateAutomaticEndings("player", new List<string>(), PoliceRoster.PoliceB));
+        }
+
+        [Test]
+        public void Arrest_IgnoresDeceasedPolice()
+        {
+            var suspicion = new PoliceSuspicionService();
+            suspicion.ApplyBatch(PoliceRoster.PoliceA, "player", new[] { 100f });
+            var evaluator = new GameEndEvaluator(suspicion, new OrganizationState());
+
+            Assert.AreEqual(GameEndingType.None, evaluator.EvaluateAutomaticEndings("player", new List<string> { PoliceRoster.PoliceA }));
+        }
+
+        [Test]
         public void TryEvaluateAndExecute_WithPoliceLifeStateService_Works()
         {
             var lifeState = new PoliceLifeStateService();

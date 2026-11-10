@@ -46,10 +46,41 @@ namespace CaseFileOmission.Tests
                 report.SetContent(section, "내용");
                 report.LinkClue(section, "clue-1");
             }
+            report.SetClaimedNpcId(ReportSection.Perpetrator, "npc-1");
 
             var result = new ContractReportValidator().Validate(contract, report, repo);
 
             Assert.IsTrue(result.CanSubmit);
+        }
+
+        [Test]
+        public void Validate_LinkedCluesWithoutFreeText_CanSubmit()
+        {
+            // 04 2026-11-09 확정: 자유 서술 입력은 기본 방식이 아니다 — 단서 연결만으로 제출할 수 있어야 한다.
+            var contract = BuildContract(withPerpetrator: true, withMotive: false, withTool: false, withSubCrime: false);
+            var repo = BuildRepositoryWithClues("clue-1");
+            var report = new ContractReportState("contract-1");
+            foreach (var section in ReportRequirementResolver.GetRequiredSections(contract))
+                report.LinkClue(section, "clue-1");
+            report.SetClaimedNpcId(ReportSection.Perpetrator, "npc-1");
+
+            Assert.IsTrue(new ContractReportValidator().Validate(contract, report, repo).CanSubmit);
+        }
+
+        [Test]
+        public void Validate_ClueFromAnotherContract_FailsSubmission()
+        {
+            var contract = BuildContract(withPerpetrator: false, withMotive: false, withTool: false, withSubCrime: false);
+            var repo = new ClueRepository();
+            repo.Discover(new ClueDefinition("other-clue", "contract-2"));
+            var report = new ContractReportState("contract-1");
+            foreach (var section in ReportRequirementResolver.GetRequiredSections(contract))
+                report.LinkClue(section, "other-clue");
+
+            var result = new ContractReportValidator().Validate(contract, report, repo);
+
+            Assert.IsFalse(result.CanSubmit);
+            Assert.IsTrue(result.Issues.Exists(i => i.Detail.Contains("이 의뢰의 단서가 아닙니다")));
         }
 
         [Test]

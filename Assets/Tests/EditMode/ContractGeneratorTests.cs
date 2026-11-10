@@ -92,6 +92,52 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void CreateCandidate_OrganizationConditionRate_StaysAtFortyPercent_AndNeverInfeasible()
+        {
+            // 05 확정: 부여가 정해지면 실행 가능한 조건 중에서 고른다 — 불가능 조합 때문에 조건 없음으로 떨어지지 않는다.
+            var config = ContractGenerationConfig.CreateDefault();
+            var generator = new ContractGenerator(config, new Random(2024));
+
+            int withCondition = 0;
+            const int sampleSize = 20000;
+            for (int i = 0; i < sampleSize; i++)
+            {
+                var candidate = generator.CreateCandidate($"c{i}");
+                if (!candidate.OrgCondition.HasCondition) continue;
+                withCondition++;
+                Assert.IsTrue(ContractGenerator.IsConditionFeasible(candidate.OrgCondition.Type, candidate));
+            }
+
+            Assert.AreEqual(0.4f, (float)withCondition / sampleSize, 0.02f);
+        }
+
+        [Test]
+        public void PickFeasibleCondition_AvoidsImmediateRepeat_WhenAlternativeExists()
+        {
+            var config = ContractGenerationConfig.CreateDefault();
+            var generator = new ContractGenerator(config, new Random(5));
+            var contract = generator.CreateCandidate("c1");
+
+            for (int i = 0; i < 200; i++)
+            {
+                var picked = generator.PickFeasibleCondition(contract, OrganizationConditionType.KeepUnsolved);
+                Assert.AreNotEqual(OrganizationConditionType.KeepUnsolved, picked);
+            }
+        }
+
+        [Test]
+        public void CreateCandidate_TruthIsFixedBeforeElements()
+        {
+            var config = ContractGenerationConfig.CreateDefault();
+            var generator = new ContractGenerator(config, new Random(8));
+            var candidate = generator.CreateCandidate("c9");
+
+            Assert.AreEqual(ContractGenerator.PerpetratorIdFor("c9"), candidate.Truth.PerpetratorId);
+            Assert.AreEqual(ContractGenerator.VictimIdFor("c9"), candidate.Truth.VictimId);
+            Assert.IsFalse(string.IsNullOrEmpty(candidate.Truth.RelationshipType));
+        }
+
+        [Test]
         public void CreateCandidate_WithSameSeed_IsDeterministic()
         {
             var config = ContractGenerationConfig.CreateDefault();
