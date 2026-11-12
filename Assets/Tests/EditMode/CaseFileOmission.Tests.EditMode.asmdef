@@ -17,6 +17,8 @@
         "CaseFileOmission.MainCase",
         "CaseFileOmission.SaveLoad",
         "CaseFileOmission.Game",
+        "CaseFileOmission.Props",
+        "CaseFileOmission.UI",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],
