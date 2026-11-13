@@ -20,8 +20,20 @@ namespace CaseFileOmission.Core
     /// </summary>
     public sealed class GameStateController
     {
-        /// <summary>06페이지 2026-11-10 확정: 한 조사 구간은 12시간 분량, 1시간 단위 12칸.</summary>
-        public const int TimeSlotsPerBlock = 12;
+        /// <summary>
+        /// 06 2026-11-11 확정: 세계 시간대는 아침·낮 06:00~18:00, 저녁·야간 18:00~다음 날 06:00(각 12시간).
+        /// 플레이어 조사 예산은 시간대마다 8시간 = 15분 1칸 × 32칸이다. 예산과 세계 시각은 별도 상태다.
+        /// </summary>
+        public const int TimeSlotsPerBlock = 32;
+
+        /// <summary>조사 예산 1칸의 길이(분).</summary>
+        public const int SlotMinutes = 15;
+
+        /// <summary>세계 시간대 하나의 길이(분).</summary>
+        public const int BlockMinutes = 12 * 60;
+
+        public const int MorningStartMinuteOfDay = 6 * 60;
+        public const int EveningStartMinuteOfDay = 18 * 60;
 
         public GamePhase CurrentPhase { get; private set; } = GamePhase.Idle;
         public string CurrentContractId { get; private set; }

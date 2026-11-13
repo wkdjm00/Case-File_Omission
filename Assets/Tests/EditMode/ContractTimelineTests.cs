@@ -251,7 +251,7 @@ namespace CaseFileOmission.Tests
 
             t = GenerateValid(5, CrimeType.Murder);
             var jumpy = new NpcSchedule(RelatedA);
-            jumpy.TryAdd(0, 10, HouseLayoutFactory.Kitchen);
+            jumpy.TryAdd(0, 10, HouseLayoutFactory.Reception);
             jumpy.TryAdd(10, t.DayEndMinute, HouseLayoutFactory.Bedroom);
             t.Schedules[RelatedA] = jumpy;
             CollectionAssert.Contains(validator.Validate(t, contract, registry, rooms).Errors, ContractValidationErrorCode.TIMELINE_CONFLICT,

@@ -60,7 +60,7 @@ namespace CaseFileOmission.Meeting
 
         public IReadOnlyList<string> ParticipantIds => _participants.Select(p => p.Id).ToList();
 
-        /// <summary>회의 시작 시 무작위로 받은 개인 단서 카드.</summary>
+        /// <summary>현재 손패(회의 시작 때 고른 카드 중 아직 쓰지 않은 것 + 은폐로 보충한 카드).</summary>
         public IReadOnlyList<string> PlayerHand => _playerHand;
 
         public string CurrentTurnId => _turnIndex >= 0 ? _participants[_turnIndex].Id : null;
@@ -73,10 +73,48 @@ namespace CaseFileOmission.Meeting
             _participants.Add((id, kind));
         }
 
+        /// <summary>손패로 고르지 않은 나머지 본인 보유 카드(대체용 카드 묶음). 은폐할 때만 여기서 1장을 무작위로 보충한다.</summary>
+        public IReadOnlyList<string> PlayerReserve => _playerReserve;
+
+        private readonly List<string> _playerReserve = new List<string>();
+
         public void DealPlayerHand(IReadOnlyList<string> heldClueIds, Random random)
         {
             _playerHand.Clear();
             _playerHand.AddRange(CardDrawService.DrawCards(heldClueIds, CardPresentationLimits.PlayerNormalTurnLimit, random));
+            _playerReserve.Clear();
+            _playerReserve.AddRange(heldClueIds.Where(id => !_playerHand.Contains(id)).Distinct());
+        }
+
+        /// <summary>
+        /// 09·06 최신 확정: 회의 전에 플레이어가 보고서의 본인 획득 카드 중 5장(보유가 5장 미만이면 전부)을 직접 고른다.
+        /// 고르지 않은 나머지는 대체용 카드 묶음이 된다. 보유하지 않은 카드·중복·장수 불일치는 거부한다.
+        /// </summary>
+        public bool TrySetPlayerHand(IReadOnlyList<string> chosenClueIds, IReadOnlyList<string> heldClueIds)
+        {
+            if (chosenClueIds == null || heldClueIds == null) return false;
+            var held = heldClueIds.Distinct().ToList();
+            int required = Math.Min(CardPresentationLimits.PlayerNormalTurnLimit, held.Count);
+            var chosen = chosenClueIds.Distinct().ToList();
+            if (chosen.Count != chosenClueIds.Count || chosen.Count != required || chosen.Any(id => !held.Contains(id)))
+                return false;
+
+            _playerHand.Clear();
+            _playerHand.AddRange(chosen);
+            _playerReserve.Clear();
+            _playerReserve.AddRange(held.Where(id => !chosen.Contains(id)));
+            return true;
+        }
+
+        /// <summary>제시한 카드는 손패에서 소진되며 보충하지 않는다.</summary>
+        public void ConsumeFromHand(string clueId) => _playerHand.Remove(clueId);
+
+        /// <summary>은폐한 카드는 손패에서 빠지고, 대체 카드는 카드 묶음에서 손패로 옮겨 온다. 묶음이 비면 손패가 5장보다 적어질 수 있다.</summary>
+        public void ConcealFromHand(string clueId, string substituteClueId)
+        {
+            _playerHand.Remove(clueId);
+            if (!string.IsNullOrEmpty(substituteClueId) && _playerReserve.Remove(substituteClueId))
+                _playerHand.Add(substituteClueId);
         }
 
         public static int GetTurnLimit(MeetingParticipantKind kind) => kind switch
@@ -85,6 +123,25 @@ namespace CaseFileOmission.Meeting
             MeetingParticipantKind.Police => CardPresentationLimits.PoliceNormalTurnLimit,
             _ => CardPresentationLimits.BasicNpcNormalTurnLimit
         };
+
+        /// <summary>
+        /// 06 2026-11-13 확정 차례 순서: 일반 NPC가 먼저(사건 참가자 목록의 안정적인 순서), 이어서 플레이어와 현장 경찰을 한 그룹으로
+        /// 게임 난수로 섞는다. 회의 시작 때 한 번 정하고, 전원이 한 차례씩 끝나면 같은 순서를 반복한다. 차례를 시작하기 전에만 호출한다.
+        /// </summary>
+        public void ApplyConfirmedTurnOrder(Random random)
+        {
+            if (_turnIndex >= 0) throw new InvalidOperationException("차례가 시작된 뒤에는 순서를 바꿀 수 없습니다.");
+            var npcs = _participants.Where(p => p.Kind == MeetingParticipantKind.Npc).OrderBy(p => p.Id, StringComparer.Ordinal).ToList();
+            var group = _participants.Where(p => p.Kind != MeetingParticipantKind.Npc).ToList();
+            for (int i = group.Count - 1; i > 0; i--)
+            {
+                int j = random.Next(i + 1);
+                (group[i], group[j]) = (group[j], group[i]);
+            }
+            _participants.Clear();
+            _participants.AddRange(npcs);
+            _participants.AddRange(group);
+        }
 
         /// <summary>다음 참가자 차례로 넘어간다. 차례가 바뀌면 그 참가자의 제시 횟수는 새로 센다.</summary>
         public string AdvanceTurn()

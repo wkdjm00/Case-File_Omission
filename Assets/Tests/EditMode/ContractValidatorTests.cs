@@ -185,8 +185,8 @@ namespace CaseFileOmission.Tests
             var rooms = HouseLayoutFactory.CreateStandardHouse();
             var assignments = new Dictionary<string, string>
             {
-                ["perp"] = HouseLayoutFactory.LivingRoom,
-                ["victim"] = HouseLayoutFactory.LivingRoom
+                ["perp"] = HouseLayoutFactory.EntranceHall,
+                ["victim"] = HouseLayoutFactory.EntranceHall
             };
 
             var result = new ContractValidator().ValidateSpatial(contract, rooms, assignments);

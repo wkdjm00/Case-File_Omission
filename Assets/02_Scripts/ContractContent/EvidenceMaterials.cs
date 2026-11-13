@@ -15,7 +15,10 @@ namespace CaseFileOmission.ContractContent
         TalkToNpc,
 
         /// <summary>방을 조사해 얻는다(현장 흔적·문서·물건).</summary>
-        InvestigateRoom
+        InvestigateRoom,
+
+        /// <summary>NPC끼리의 대화를 엿들어 얻는다(조사 중 실제로 일어난 정보 전달).</summary>
+        Overheard
     }
 
     /// <summary>
@@ -62,6 +65,19 @@ namespace CaseFileOmission.ContractContent
         public bool IdentifiesPerpetrator;
 
         /// <summary>
+        /// 조사로 얻는 자료가 놓인 조사 오브젝트(04 2026-11-11 방별 조사 오브젝트 후보). null이면 방 자체에서 얻는다.
+        /// 조사 오브젝트 ID는 "{room_id}:{오브젝트 이름}" 형식이다.
+        /// </summary>
+        public string ObjectId;
+
+        /// <summary>이 자료를 얻으려면 먼저 보유해야 하는 자료(예: 진술을 들은 뒤에야 보관 중인 서신을 확인). null이면 조건 없음.</summary>
+        public string RequiresClueId;
+
+        /// <summary>표시 제목·본문(TEST_TEMP 템플릿 문장 — AI 생성 연동 전 결정적 생성). 판정에는 쓰지 않는다.</summary>
+        public string Title;
+        public string Content;
+
+        /// <summary>
         /// 기존 단서 저장소에 넣을 정의로 바꾼다. 발견 처리(Discover)는 하지 않는다 — 플레이어가 실제로 얻을 때만 등록한다
         /// (04 확정 "보고서 정답만으로 현장에 없는 단서를 자동 지급하지 않는다").
         /// </summary>
@@ -71,8 +87,10 @@ namespace CaseFileOmission.ContractContent
             TruthStatus = TruthStatus,
             RelatedTruthNote = AboutEventId,
             SourceDescription = SourceNpcId ?? RoomId,
-            AcquisitionCondition = Acquisition == MaterialAcquisition.TalkToNpc ? $"talk:{SourceNpcId}" : $"investigate:{RoomId}",
-            IdentifiesPerpetrator = IdentifiesPerpetrator
+            AcquisitionCondition = Acquisition == MaterialAcquisition.TalkToNpc ? $"talk:{SourceNpcId}" : $"investigate:{ObjectId ?? RoomId}",
+            IdentifiesPerpetrator = IdentifiesPerpetrator,
+            DisplayName = Title ?? MaterialId,
+            DisplayedContent = Content
         };
     }
 

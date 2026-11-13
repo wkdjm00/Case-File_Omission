@@ -64,22 +64,22 @@ namespace CaseFileOmission.Tests
         public void NothingToDo_WaitsInPlace()
         {
             var s = new Scene();
-            s.AddNpc("npc-1", HouseLayoutFactory.LivingRoom);
+            s.AddNpc("npc-1", HouseLayoutFactory.EntranceHall);
 
             var r = s.Planner.Act("t1", "npc-1", 0);
 
             Assert.AreEqual(NpcBehaviorStatus.Executed, r.Status);
             Assert.AreEqual(NpcBehaviorKind.Wait, r.Kind, "07 확정: 할 일이 없으면 대기한다.");
-            Assert.AreEqual(HouseLayoutFactory.LivingRoom, s.Occupancy.GetRoom("npc-1"));
+            Assert.AreEqual(HouseLayoutFactory.EntranceHall, s.Occupancy.GetRoom("npc-1"));
         }
 
         [Test]
         public void DeceasedNpc_DoesNotAct()
         {
             var s = new Scene();
-            var npc = s.AddNpc("npc-1", HouseLayoutFactory.LivingRoom);
+            var npc = s.AddNpc("npc-1", HouseLayoutFactory.EntranceHall);
             npc.LearnInfo("info-1", NpcJudgement.Believe);
-            s.AddNpc("npc-2", HouseLayoutFactory.LivingRoom);
+            s.AddNpc("npc-2", HouseLayoutFactory.EntranceHall);
             npc.MarkDeceased();
 
             var r = s.Planner.Act("t1", "npc-1", 0);
@@ -92,9 +92,9 @@ namespace CaseFileOmission.Tests
         public void SameRoomPartner_SharesKnownInfo_AndPartnerTurnIsConsumed()
         {
             var s = new Scene();
-            var sender = s.AddNpc("npc-a", HouseLayoutFactory.LivingRoom);
+            var sender = s.AddNpc("npc-a", HouseLayoutFactory.EntranceHall);
             sender.LearnInfo("info-1", NpcJudgement.Believe);
-            var receiver = s.AddNpc("npc-b", HouseLayoutFactory.LivingRoom);
+            var receiver = s.AddNpc("npc-b", HouseLayoutFactory.EntranceHall);
 
             var r = s.Planner.Act("t1", "npc-a", 0);
 
@@ -112,7 +112,7 @@ namespace CaseFileOmission.Tests
         public void SameTurnTwice_SecondIsDuplicate()
         {
             var s = new Scene();
-            s.AddNpc("npc-1", HouseLayoutFactory.LivingRoom);
+            s.AddNpc("npc-1", HouseLayoutFactory.EntranceHall);
 
             s.Planner.Act("t1", "npc-1", 0);
             Assert.AreEqual(NpcBehaviorStatus.DuplicateTurn, s.Planner.Act("t1", "npc-1", 0).Status);
@@ -123,9 +123,9 @@ namespace CaseFileOmission.Tests
         public void AlreadyTransferredInfo_IsNotOfferedAgain()
         {
             var s = new Scene();
-            var sender = s.AddNpc("npc-a", HouseLayoutFactory.LivingRoom);
+            var sender = s.AddNpc("npc-a", HouseLayoutFactory.EntranceHall);
             sender.LearnInfo("info-1", NpcJudgement.Believe);
-            s.AddNpc("npc-b", HouseLayoutFactory.LivingRoom);
+            s.AddNpc("npc-b", HouseLayoutFactory.EntranceHall);
 
             s.Planner.Act("t1", "npc-a", 0);
             var second = s.Planner.Act("t2", "npc-a", 0);
@@ -137,7 +137,7 @@ namespace CaseFileOmission.Tests
         public void PartnerInAnotherRoom_IsNotContacted()
         {
             var s = new Scene();
-            var sender = s.AddNpc("npc-a", HouseLayoutFactory.LivingRoom);
+            var sender = s.AddNpc("npc-a", HouseLayoutFactory.EntranceHall);
             sender.LearnInfo("info-1", NpcJudgement.Believe);
             var other = s.AddNpc("npc-b", HouseLayoutFactory.Bedroom);
 
@@ -151,9 +151,9 @@ namespace CaseFileOmission.Tests
         public void DeadPartner_IsNotContacted()
         {
             var s = new Scene();
-            var sender = s.AddNpc("npc-a", HouseLayoutFactory.LivingRoom);
+            var sender = s.AddNpc("npc-a", HouseLayoutFactory.EntranceHall);
             sender.LearnInfo("info-1", NpcJudgement.Believe);
-            var victim = s.AddNpc("npc-b", HouseLayoutFactory.LivingRoom, role: NpcActualRole.Victim);
+            var victim = s.AddNpc("npc-b", HouseLayoutFactory.EntranceHall, role: NpcActualRole.Victim);
             victim.MarkDeceased();
 
             Assert.AreEqual(NpcBehaviorKind.Wait, s.Planner.Act("t1", "npc-a", 0).Kind);
@@ -164,7 +164,7 @@ namespace CaseFileOmission.Tests
         public void Schedule_MovesOneAdjacentRoomPerTurn_ThenWaits()
         {
             var s = new Scene();
-            s.AddNpc("npc-1", HouseLayoutFactory.Kitchen);
+            s.AddNpc("npc-1", HouseLayoutFactory.Reception);
             var schedule = new NpcSchedule("npc-1");
             Assert.AreEqual(NpcScheduleAddResult.Added, schedule.TryAdd(0, 60, HouseLayoutFactory.Bedroom));
             s.Planner.SetSchedule(schedule);
@@ -178,7 +178,7 @@ namespace CaseFileOmission.Tests
             }
 
             CollectionAssert.AreEqual(
-                new[] { HouseLayoutFactory.LivingRoom, HouseLayoutFactory.Hallway, HouseLayoutFactory.Bedroom }, visited);
+                new[] { HouseLayoutFactory.EntranceHall, HouseLayoutFactory.CorridorStairs, HouseLayoutFactory.Bedroom }, visited);
             Assert.AreEqual(NpcBehaviorKind.Wait, s.Planner.Act("t3", "npc-1", 30).Kind);
         }
 
@@ -186,7 +186,7 @@ namespace CaseFileOmission.Tests
         public void Schedule_OutsideAnyEntry_Waits()
         {
             var s = new Scene();
-            s.AddNpc("npc-1", HouseLayoutFactory.Kitchen);
+            s.AddNpc("npc-1", HouseLayoutFactory.Reception);
             var schedule = new NpcSchedule("npc-1");
             schedule.TryAdd(60, 120, HouseLayoutFactory.Bedroom);
             s.Planner.SetSchedule(schedule);
@@ -198,7 +198,7 @@ namespace CaseFileOmission.Tests
         public void Schedule_ConflictingOrInvalidEntries_AreRejected()
         {
             var schedule = new NpcSchedule("npc-1");
-            Assert.AreEqual(NpcScheduleAddResult.Added, schedule.TryAdd(0, 30, HouseLayoutFactory.Kitchen));
+            Assert.AreEqual(NpcScheduleAddResult.Added, schedule.TryAdd(0, 30, HouseLayoutFactory.Reception));
             Assert.AreEqual(NpcScheduleAddResult.ConflictsWithExisting, schedule.TryAdd(20, 40, HouseLayoutFactory.Bedroom));
             Assert.AreEqual(NpcScheduleAddResult.Added, schedule.TryAdd(30, 40, HouseLayoutFactory.Bedroom), "끝 시각은 포함하지 않는다.");
             Assert.AreEqual(NpcScheduleAddResult.InvalidRange, schedule.TryAdd(50, 50, HouseLayoutFactory.Bedroom));
@@ -234,12 +234,12 @@ namespace CaseFileOmission.Tests
         public void BlockedRoute_WithoutAlternative_WaitsThreeTurns_ThenStopsRepeating_KeepsDestination()
         {
             var s = new Scene();
-            s.AddNpc("npc-1", HouseLayoutFactory.LivingRoom);
+            s.AddNpc("npc-1", HouseLayoutFactory.EntranceHall);
             var schedule = new NpcSchedule("npc-1");
             schedule.TryAdd(0, 100, HouseLayoutFactory.Bedroom);
             s.Planner.SetSchedule(schedule);
             bool hallwayBlocked = true;
-            s.Planner.IsRoomBlocked = room => hallwayBlocked && room == HouseLayoutFactory.Hallway;
+            s.Planner.IsRoomBlocked = room => hallwayBlocked && room == HouseLayoutFactory.CorridorStairs;
 
             Assert.AreEqual(NpcBehaviorStatus.BlockedWaiting, s.Planner.Act("t1", "npc-1", 0).Status);
             Assert.AreEqual(NpcBehaviorStatus.BlockedWaiting, s.Planner.Act("t2", "npc-1", 10).Status);
@@ -249,21 +249,21 @@ namespace CaseFileOmission.Tests
 
             var fifth = s.Planner.Act("t5", "npc-1", 40);
             Assert.AreEqual(NpcBehaviorKind.Wait, fifth.Kind, "멈춘 이동은 길이 막혀 있는 동안 다시 시도하지 않는다.");
-            Assert.AreEqual(HouseLayoutFactory.LivingRoom, s.Occupancy.GetRoom("npc-1"));
+            Assert.AreEqual(HouseLayoutFactory.EntranceHall, s.Occupancy.GetRoom("npc-1"));
 
             hallwayBlocked = false;
             var sixth = s.Planner.Act("t6", "npc-1", 50);
             Assert.AreEqual(NpcBehaviorKind.MoveBySchedule, sixth.Kind, "목적지는 유지되므로 길이 열리면 다시 이동한다.");
-            Assert.AreEqual(HouseLayoutFactory.Hallway, s.Occupancy.GetRoom("npc-1"));
+            Assert.AreEqual(HouseLayoutFactory.CorridorStairs, s.Occupancy.GetRoom("npc-1"));
         }
 
         [Test]
         public void UrgentAvoid_IsChosenBeforeOtherCandidates()
         {
             var s = new Scene();
-            var npc = s.AddNpc("npc-a", HouseLayoutFactory.LivingRoom, NpcPersonality.Guilty);
+            var npc = s.AddNpc("npc-a", HouseLayoutFactory.EntranceHall, NpcPersonality.Guilty);
             npc.LearnInfo("info-1", NpcJudgement.Believe);
-            s.AddNpc("npc-b", HouseLayoutFactory.LivingRoom);
+            s.AddNpc("npc-b", HouseLayoutFactory.EntranceHall);
             var source = new ListSource();
             source.Candidates.Add(new NpcBehaviorCandidate { Kind = NpcBehaviorKind.Avoid, IsUrgent = true, Execute = () => { } });
             s.Planner.AddCandidateSource(source);
@@ -296,8 +296,8 @@ namespace CaseFileOmission.Tests
         public void DroppedClueInRoom_IsAutoAcquired()
         {
             var s = new Scene();
-            var npc = s.AddNpc("npc-1", HouseLayoutFactory.LivingRoom);
-            s.DropClue("clue-1", HouseLayoutFactory.LivingRoom);
+            var npc = s.AddNpc("npc-1", HouseLayoutFactory.EntranceHall);
+            s.DropClue("clue-1", HouseLayoutFactory.EntranceHall);
 
             var r = s.Planner.Act("t1", "npc-1", 0);
 
@@ -312,9 +312,9 @@ namespace CaseFileOmission.Tests
         public void DroppedClue_AtCapacity_IsPassedWithoutReplacement()
         {
             var s = new Scene();
-            s.AddNpc("npc-1", HouseLayoutFactory.LivingRoom);
+            s.AddNpc("npc-1", HouseLayoutFactory.EntranceHall);
             s.Capacity.RestoreHoldings("npc-1", HolderType.Npc, new[] { "x1", "x2", "x3" });
-            s.DropClue("clue-1", HouseLayoutFactory.LivingRoom);
+            s.DropClue("clue-1", HouseLayoutFactory.EntranceHall);
 
             var r = s.Planner.Act("t1", "npc-1", 0);
 
@@ -328,10 +328,10 @@ namespace CaseFileOmission.Tests
         public void DroppedClue_InRoomReachedByScheduledMove_IsAcquired()
         {
             var s = new Scene();
-            s.AddNpc("npc-1", HouseLayoutFactory.Kitchen);
-            s.DropClue("clue-1", HouseLayoutFactory.LivingRoom);
+            s.AddNpc("npc-1", HouseLayoutFactory.Reception);
+            s.DropClue("clue-1", HouseLayoutFactory.EntranceHall);
             var schedule = new NpcSchedule("npc-1");
-            schedule.TryAdd(0, 100, HouseLayoutFactory.LivingRoom);
+            schedule.TryAdd(0, 100, HouseLayoutFactory.EntranceHall);
             s.Planner.SetSchedule(schedule);
 
             var r = s.Planner.Act("t1", "npc-1", 0);
@@ -343,9 +343,9 @@ namespace CaseFileOmission.Tests
         public void DeceasedNpc_DoesNotPickUpClue()
         {
             var s = new Scene();
-            var npc = s.AddNpc("npc-1", HouseLayoutFactory.LivingRoom, role: NpcActualRole.Victim);
+            var npc = s.AddNpc("npc-1", HouseLayoutFactory.EntranceHall, role: NpcActualRole.Victim);
             npc.MarkDeceased();
-            s.DropClue("clue-1", HouseLayoutFactory.LivingRoom);
+            s.DropClue("clue-1", HouseLayoutFactory.EntranceHall);
 
             s.Planner.Act("t1", "npc-1", 0);
 
@@ -356,7 +356,7 @@ namespace CaseFileOmission.Tests
         public void ExternalCandidate_RequiringUnknownInfoOrOtherRoom_IsNotChosen()
         {
             var s = new Scene();
-            var npc = s.AddNpc("npc-1", HouseLayoutFactory.LivingRoom);
+            var npc = s.AddNpc("npc-1", HouseLayoutFactory.EntranceHall);
             int executed = 0;
             var source = new ListSource();
             source.Candidates.Add(new NpcBehaviorCandidate
@@ -378,7 +378,7 @@ namespace CaseFileOmission.Tests
         public void ExternalCandidate_WithoutExecuteCallback_IsNotFeasible()
         {
             var s = new Scene();
-            s.AddNpc("npc-1", HouseLayoutFactory.LivingRoom);
+            s.AddNpc("npc-1", HouseLayoutFactory.EntranceHall);
             var source = new ListSource();
             source.Candidates.Add(new NpcBehaviorCandidate { Kind = NpcBehaviorKind.Question });
             s.Planner.AddCandidateSource(source);
@@ -393,7 +393,7 @@ namespace CaseFileOmission.Tests
         {
             var policy = new TendencyWeightedNpcBehaviorPolicy(baseWeight: 1f, preferredWeight: 9f, random: new FixedRandom(0.5));
             var s = new Scene(policy: policy);
-            s.AddNpc("npc-1", HouseLayoutFactory.LivingRoom, personality);
+            s.AddNpc("npc-1", HouseLayoutFactory.EntranceHall, personality);
             var source = new ListSource();
             source.Candidates.Add(new NpcBehaviorCandidate { Kind = NpcBehaviorKind.Investigate, Execute = () => { } });
             source.Candidates.Add(new NpcBehaviorCandidate { Kind = NpcBehaviorKind.Avoid, Execute = () => { } });
@@ -424,9 +424,9 @@ namespace CaseFileOmission.Tests
         public void SenderSuspicionTowardReceiver_UsesConfirmedTransferModifiers(float suspicion, float expectedChance)
         {
             var s = new Scene();
-            var sender = s.AddNpc("npc-a", HouseLayoutFactory.LivingRoom, NpcPersonality.Greedy);
+            var sender = s.AddNpc("npc-a", HouseLayoutFactory.EntranceHall, NpcPersonality.Greedy);
             sender.LearnInfo("info-1", NpcJudgement.Believe);
-            s.AddNpc("npc-b", HouseLayoutFactory.LivingRoom);
+            s.AddNpc("npc-b", HouseLayoutFactory.EntranceHall);
             s.Relationships.SetSuspicion("npc-a", "npc-b", suspicion);
 
             var r = s.Planner.Act("t1", "npc-a", 0);
@@ -438,9 +438,9 @@ namespace CaseFileOmission.Tests
         public void ExecuteTurn_EachNpcActsAtMostOnce()
         {
             var s = new Scene();
-            var a = s.AddNpc("npc-a", HouseLayoutFactory.LivingRoom);
+            var a = s.AddNpc("npc-a", HouseLayoutFactory.EntranceHall);
             a.LearnInfo("info-1", NpcJudgement.Believe);
-            s.AddNpc("npc-b", HouseLayoutFactory.LivingRoom);
+            s.AddNpc("npc-b", HouseLayoutFactory.EntranceHall);
             s.AddNpc("npc-c", HouseLayoutFactory.Bedroom);
 
             var results = s.Planner.ExecuteTurn("t1", Contract, 0);

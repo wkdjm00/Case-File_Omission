@@ -1,36 +1,52 @@
 namespace CaseFileOmission.Rooms
 {
     /// <summary>
-    /// §3-2 5단계 "주택 내부 공간 구성"의 임시 구현. 실제 모델링 결과가 나오기 전까지
-    /// 고정된 표준 주택 평면(거실-주방, 거실-복도, 복도-침실, 복도-욕실)을 사용한다.
-    /// 방 이름은 전부 임시 표시용이며 RoomId는 고정 상수로 다른 시스템이 참조한다.
+    /// 09 「Unity 임시 3D 공간 그래프·좌표·접근 거리 계약」(2026-11-13)의 TEMP_LAYOUT_V1 공간 그래프.
+    /// 주택 기본 8개 공간과 7개 연결(DOOR_01~07)을 고정한다. 실외·욕실·손님방·지하실은 만들지 않는다.
+    /// 계단은 아홉 번째 방이 아니라 현관 홀 안의 임시 오브젝트다(좌표·크기는 <see cref="TempLayoutV1"/>).
+    /// RoomId는 고정 상수로 다른 시스템이 참조하며, 표시 이름은 임시다.
     /// </summary>
     public static class HouseLayoutFactory
     {
-        public const string LivingRoom = "living-room";
-        public const string Kitchen = "kitchen";
-        public const string Hallway = "hallway";
-        public const string Bedroom = "bedroom";
-        public const string Bathroom = "bathroom";
+        public const string EntranceHall = "ROOM_ENTRANCE_HALL";
+        public const string Reception = "ROOM_RECEPTION";
+        public const string Dining = "ROOM_DINING";
+        public const string Kitchen = "ROOM_KITCHEN";
+        public const string PantryUtility = "ROOM_PANTRY_UTILITY";
+        public const string CorridorStairs = "ROOM_CORRIDOR_STAIRS";
+        public const string Bedroom = "ROOM_BEDROOM";
+        public const string Study = "ROOM_STUDY";
 
         public static readonly string[] AllRoomIds =
         {
-            LivingRoom, Kitchen, Hallway, Bedroom, Bathroom
+            EntranceHall, Reception, Dining, Kitchen, PantryUtility, CorridorStairs, Bedroom, Study
         };
+
+        /// <summary>표시 이름(임시).</summary>
+        public static string GetDisplayName(string roomId) => roomId switch
+        {
+            EntranceHall => "현관 홀",
+            Reception => "응접실",
+            Dining => "식당",
+            Kitchen => "주방",
+            PantryUtility => "식료품 저장실·다용도실",
+            CorridorStairs => "복도·계단",
+            Bedroom => "침실",
+            Study => "서재",
+            _ => roomId
+        };
+
+        /// <summary>09 확정: 컴퓨터가 있는 방(대상자 번호 파일 비밀번호 입력). 임시로 서재만 둔다.</summary>
+        public static bool RoomHasComputer(string roomId) => roomId == Study;
 
         public static RoomGraph CreateStandardHouse()
         {
             var graph = new RoomGraph();
-            graph.AddRoom(new RoomDefinition(LivingRoom, "거실(임시)"));
-            graph.AddRoom(new RoomDefinition(Kitchen, "주방(임시)"));
-            graph.AddRoom(new RoomDefinition(Hallway, "복도(임시)"));
-            graph.AddRoom(new RoomDefinition(Bedroom, "침실(임시)"));
-            graph.AddRoom(new RoomDefinition(Bathroom, "욕실(임시)"));
+            foreach (var id in AllRoomIds)
+                graph.AddRoom(new RoomDefinition(id, GetDisplayName(id)));
 
-            graph.Connect(LivingRoom, Kitchen);
-            graph.Connect(LivingRoom, Hallway);
-            graph.Connect(Hallway, Bedroom);
-            graph.Connect(Hallway, Bathroom);
+            foreach (var door in TempLayoutV1.Doors)
+                graph.Connect(door.RoomA, door.RoomB);
 
             return graph;
         }

@@ -91,6 +91,7 @@ namespace CaseFileOmission.SaveLoad
         public NpcActualRole ActualRole;
         public NpcPersonality Personality;
         public string Occupation;
+        public string DisplayName;
         public bool IsAlive;
         public bool IsCooperatingWithPlayer;
         public NpcKnowledgeDto[] Knowledge;
@@ -168,6 +169,57 @@ namespace CaseFileOmission.SaveLoad
         public string ContractId;
         public bool IsSubmitted;
         public ReportSectionDto[] Sections;
+        public ReportSlotDto[] Slots;
+    }
+
+    [Serializable]
+    public sealed class PublicRoleDto
+    {
+        public string NpcId;
+        public string Role;
+    }
+
+    [Serializable]
+    public sealed class OpinionDto
+    {
+        public string Observer;
+        public string Suspect;
+        public float Value;
+    }
+
+    [Serializable]
+    public sealed class ReportSlotDto
+    {
+        public int Index;
+        public bool Unlocked;
+        public ReportSlotStatus Status;
+        public string LastAnswer;
+    }
+
+    [Serializable]
+    public sealed class CaseBoardItemDto
+    {
+        public string ItemId;
+        public bool BoardDecorationOnly;
+        public float X, Y, RotationDegrees;
+        public bool OnBoard;
+    }
+
+    [Serializable]
+    public sealed class CaseBoardLinkDto
+    {
+        public string ItemA, ItemB;
+    }
+
+    /// <summary>의뢰 하나의 사건보드 배치·폐기·연결선(09 2026-11-13). 중앙 메모는 연결선에서 다시 계산한다.</summary>
+    [Serializable]
+    public sealed class CaseBoardSaveData
+    {
+        public string ContractId;
+        public int Seed;
+        public int LayoutVersion;
+        public CaseBoardItemDto[] Items;
+        public CaseBoardLinkDto[] Links;
     }
 
     [Serializable]
@@ -210,6 +262,7 @@ namespace CaseFileOmission.SaveLoad
         public CrimeType Type;
         public string LinkReason;
         public string[] LinkedNpcIds;
+        public string EventId;
     }
 
     /// <summary>진행 중인 의뢰 하나. 실제 진실/외부 상태/공식 결론/조직 조건을 분리된 구역 그대로 저장한다.</summary>
@@ -223,6 +276,18 @@ namespace CaseFileOmission.SaveLoad
         public StubLocation Location;
         public TimeBlock StartTimeBlock;
         public string HandlerPoliceId;
+        public string IncidentDate;
+        public string FixtureId;
+        public string PlayerStartRoomId;
+        public bool HasInvestigationStartOverride;
+        public int InvestigationStartMinuteOverride;
+        public bool HasRepresentativeCrimeType;
+        public CrimeType RepresentativeCrimeType;
+        public string[] PoliceKnownFacts;
+        public string[] PoliceUnknownFacts;
+        public string PoliceClassificationBasis;
+        public int IncidentClockMinute;
+        public int HandoverDayOffset;
         public SubCrimeLinkDto[] SubCrimes;
 
         public string PerpetratorId;
@@ -234,6 +299,15 @@ namespace CaseFileOmission.SaveLoad
         public string RelationshipType;
         public CoverUpMethod CoverUp;
         public string[] TimelineEvents;
+        public string MethodId;
+        public string ToolId;
+        public string MotiveId;
+        public string RelationshipId;
+        public string RepresentativeSubtypeId;
+        public string ActualSubtypeId;
+        public bool VictimDeparted;
+        public bool BodyHidden;
+        public bool DelayedDeath;
 
         public string ReportedSummary;
         public string InitialExplanation;
@@ -267,6 +341,13 @@ namespace CaseFileOmission.SaveLoad
         public string NextHandlerPoliceId;
         public string SceneRoomId;
         public int NpcMinute;
+        public int BlockStartMinute;
+        public string[] HandlerQueue;
+        public string LastHandlerPoliceId;
+        public bool PersuasionAttempted;
+        public bool CulpritIdentified;
+        public OpinionDto[] Opinions;
+        public PublicRoleDto[] PublicRoles;
         public int MeetingsEndedInContract;
         public string RebelContactNpcId;
         public string RebelMemoRoomId;
@@ -291,6 +372,10 @@ namespace CaseFileOmission.SaveLoad
         public string[] RebuttedByMaterialIds;
         public string FalsehoodReason;
         public bool IdentifiesPerpetrator;
+        public string ObjectId;
+        public string RequiresClueId;
+        public string Title;
+        public string Content;
     }
 
     /// <summary>
@@ -309,6 +394,9 @@ namespace CaseFileOmission.SaveLoad
         public NpcSaveData Npc;
         public MeetingSaveData Meeting;
         public ContractReportSaveData[] Reports;
+
+        /// <summary>버전 2에 추가된 선택 구역. 없던 예전 저장 파일은 빈 보드로 시작한다.</summary>
+        public CaseBoardSaveData[] CaseBoards;
         public MainCaseExtendedSaveData MainCase;
         public OccupantPositionDto[] Positions;
         public GameEventDto[] GlobalEvents;

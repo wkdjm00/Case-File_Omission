@@ -137,7 +137,7 @@ namespace CaseFileOmission.Tests
             var repo = new ClueRepository();
             var ctx = new MainCaseClueContext { ContractId = "c1", RoomHasComputer = true };
 
-            var unconfigured = new MainCaseClueAcquisitionService();
+            var unconfigured = new MainCaseClueAcquisitionService(new MainCaseClueRuleConfig { SubjectNumberFilePassword = null });
             Assert.AreEqual(MainCaseClueAcquireOutcome.NotEligible,
                 unconfigured.TryAcquire(MainCaseClueCode.SubjectNumberFile, MainCaseClueRoute.FoundInContract, ctx, tracker, repo));
 

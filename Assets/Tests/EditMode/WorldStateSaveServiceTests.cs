@@ -30,6 +30,7 @@ namespace CaseFileOmission.Tests
             public readonly NpcInfoTransferService InfoTransfer;
             public readonly MeetingSession Meeting;
             public readonly List<ContractReportState> Reports = new List<ContractReportState>();
+            public readonly List<CaseBoardState> CaseBoards = new List<CaseBoardState>();
             public readonly MainCaseProgressTracker MainCase = new MainCaseProgressTracker();
             public readonly PostReportBranching PostReport = new PostReportBranching();
             public readonly MainCaseFinalReportCoordinator FinalReport;
@@ -56,6 +57,7 @@ namespace CaseFileOmission.Tests
                 InfoTransfer = InfoTransfer,
                 Meeting = Meeting,
                 Reports = Reports,
+                CaseBoards = CaseBoards,
                 MainCase = MainCase,
                 FinalReport = FinalReport.Report,
                 PostReport = PostReport,
@@ -112,6 +114,36 @@ namespace CaseFileOmission.Tests
             Assert.AreEqual("c", target.Manipulation.History[1].DisplayedClueId);
 
             CollectionAssert.AreEqual(new[] { "c", "a" }, target.Capacity.GetHeldClues("npc-1"), "획득 순서(가장 오래된 것 교체 기준)도 유지된다.");
+        }
+
+        [Test]
+        public void CaseBoard_RoundTrip_RestoresPositionsDiscardsAndLinks_SkippingUnknownClues()
+        {
+            var source = new World();
+            source.Clues.Discover(Clue("a"));
+            source.Clues.Discover(Clue("b"));
+            source.Clues.Discover(Clue("c"));
+            var board = new CaseBoardState(ContractId, 77);
+            board.SyncMaterials(new[] { "a", "b", "c" });
+            board.Move("a", 0.25f, 0.75f);
+            board.Discard("c");
+            board.Connect("a", "b");
+            board.Items.Add(new CaseBoardItem { ItemId = "ghost", X = 0.5f, Y = 0.1f });
+            source.CaseBoards.Add(board);
+
+            var logger = new GameLogger();
+            var target = RoundTrip(source, logger);
+
+            var restored = target.CaseBoards.Single();
+            Assert.AreEqual(77, restored.Seed);
+            Assert.AreEqual(0.25f, restored.Get("a").X, 1e-5);
+            Assert.AreEqual(0.75f, restored.Get("a").Y, 1e-5);
+            Assert.IsFalse(restored.Get("c").OnBoard, "폐기 상태 유지");
+            Assert.IsTrue(restored.Links.Single().Connects("a", "b"));
+            Assert.IsTrue(restored.IsMemoVisible);
+            Assert.AreEqual(3, restored.Items.Count(i => i.BoardDecorationOnly), "장식 항목도 그대로 복원");
+            Assert.IsNull(restored.Get("ghost"), "단서 저장소에 없는 항목은 건너뛴다.");
+            Assert.IsTrue(logger.Entries.Any(e => e.ErrorCode == "SAVE_UNKNOWN_CLUE_ID"));
         }
 
         [Test]
@@ -272,12 +304,12 @@ namespace CaseFileOmission.Tests
         public void PositionsAndGlobalEvents_RoundTrip()
         {
             var source = new World();
-            source.Occupancy.PlaceAt("npc-1", HouseLayoutFactory.Kitchen);
+            source.Occupancy.PlaceAt("npc-1", HouseLayoutFactory.Reception);
             source.EventLog.TryRecord(new GameEvent("evt-1", GameEventType.ContractResolved, ContractId, "p"));
 
             var target = RoundTrip(source);
 
-            Assert.AreEqual(HouseLayoutFactory.Kitchen, target.Occupancy.GetRoom("npc-1"));
+            Assert.AreEqual(HouseLayoutFactory.Reception, target.Occupancy.GetRoom("npc-1"));
             Assert.IsTrue(target.EventLog.HasProcessed("evt-1"));
             Assert.IsFalse(target.EventLog.TryRecord(new GameEvent("evt-1", GameEventType.ContractResolved, ContractId, "p")));
         }

@@ -64,14 +64,16 @@ namespace CaseFileOmission.Tests
         public void Investigation_SpendsTimeSlots_AndBlockEndsWhenBudgetRunsOut()
         {
             var s = StartContract();
-            var first = s.InvestigateRoom();
+            // 플레이어는 현장에서 시작한다. 현장 흔적은 현장 방의 조사 오브젝트에 놓여 있다.
+            string sceneObject = s.Materials.First(m => m.MaterialId.Contains("scene-trace")).ObjectId;
+            var first = s.InvestigateObject(sceneObject);
             Assert.IsTrue(first.Success);
-            Assert.AreEqual(11, s.State.RemainingTimeSlots);
+            Assert.AreEqual(28, s.State.RemainingTimeSlots, "새 대상 조사 1시간 = 4칸.");
             Assert.IsTrue(first.NewClueIds.Count > 0, "현장 조사로 현장 자료를 얻는다.");
 
-            var detailed = s.InvestigateRoom(detailedSearch: true);
-            Assert.AreEqual(9, s.State.RemainingTimeSlots, "상세 수색은 2칸.");
-            Assert.AreEqual(0, detailed.NewClueIds.Count, "이미 얻은 자료는 다시 얻지 않는다.");
+            var again = s.InvestigateObject(sceneObject);
+            Assert.AreEqual(24, s.State.RemainingTimeSlots);
+            Assert.AreEqual(0, again.NewClueIds.Count, "이미 얻은 자료는 다시 얻지 않는다.");
 
             while (s.State.RemainingTimeSlots > 0)
                 Assert.IsTrue(s.InvestigateRoom().Success);
@@ -81,7 +83,7 @@ namespace CaseFileOmission.Tests
 
             Assert.IsTrue(s.AdvanceToNextTimeBlock().Success);
             Assert.AreEqual(TimeBlock.Evening, s.State.CurrentTimeBlock);
-            Assert.AreEqual(12, s.State.RemainingTimeSlots);
+            Assert.AreEqual(32, s.State.RemainingTimeSlots);
         }
 
         [Test]
@@ -91,7 +93,7 @@ namespace CaseFileOmission.Tests
             string far = s.Rooms.AllRoomIds.First(r => r != s.PlayerRoom && !s.Rooms.AreConnected(s.PlayerRoom, r));
 
             Assert.AreEqual(GameActionFailure.RoomNotConnected, s.MovePlayer(far).Failure);
-            Assert.AreEqual(12, s.State.RemainingTimeSlots);
+            Assert.AreEqual(32, s.State.RemainingTimeSlots);
         }
 
         [Test]
@@ -122,6 +124,57 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void PassTime_AdvancesBudgetAndNpcClock_WithoutOtherActions()
+        {
+            var s = StartContract();
+            string room = s.PlayerRoom;
+            int minute = s.Campaign.NpcMinute;
+            int clues = s.Clues.GetHeldByPlayerClueIds(s.CurrentContract.ContractId).Count;
+
+            Assert.IsTrue(s.PassTime(3).Success);
+
+            Assert.AreEqual(29, s.State.RemainingTimeSlots);
+            Assert.AreEqual(minute + 3 * GameSession.NpcMinutesPerTimeSlot, s.Campaign.NpcMinute);
+            Assert.AreEqual(room, s.PlayerRoom, "시간 보내기 동안 플레이어는 제자리에 머문다.");
+            Assert.AreEqual(clues, s.Clues.GetHeldByPlayerClueIds(s.CurrentContract.ContractId).Count, "조사를 자동 실행하지 않는다.");
+
+            Assert.AreEqual(GameActionFailure.NotEnoughTime, s.PassTime(30).Failure, "남은 예산보다 긴 시간은 거부한다.");
+            Assert.AreEqual(29, s.State.RemainingTimeSlots);
+            Assert.AreEqual(GameActionFailure.InvalidInput, s.PassTime(0).Failure);
+
+            Assert.IsTrue(s.PassTime(29).Success);
+            Assert.IsTrue(s.State.IsTimeBlockEnded);
+        }
+
+        [Test]
+        public void StartMeeting_WithChosenHand_UsesExactlyTheChosenCards_AndRejectsUnheldOnes()
+        {
+            var s = StartContract();
+            while (!s.State.IsTimeBlockEnded)
+            {
+                foreach (var npc in s.Npcs.GetByContract(s.CurrentContract.ContractId).Where(n => n.IsAlive).ToList())
+                    if (!s.State.IsTimeBlockEnded && s.Occupancy.HasPosition(npc.NpcId) && s.Occupancy.GetRoom(npc.NpcId) == s.PlayerRoom)
+                        s.TalkTo(npc.NpcId);
+                if (!s.State.IsTimeBlockEnded) s.InvestigateRoom();
+            }
+            var held = s.Clues.GetHeldByPlayerClueIds(s.CurrentContract.ContractId).ToList();
+            Assume.That(held.Count, Is.GreaterThan(0));
+
+            Assert.AreEqual(GameActionFailure.InvalidInput, s.StartMeeting(new[] { "not-held" }).Failure);
+            Assert.AreEqual(GamePhase.Investigation, s.State.CurrentPhase, "잘못된 선택이면 회의를 열지 않는다.");
+
+            var chosen = held.Take(5).ToList();
+            Assert.IsTrue(s.StartMeeting(chosen).Success);
+            CollectionAssert.AreEquivalent(chosen, s.MeetingFlow.PlayerHand);
+            CollectionAssert.AreEquivalent(held.Skip(5), s.MeetingFlow.PlayerReserve);
+
+            string first = chosen[0];
+            Assert.IsTrue(s.PresentCard(first, CardManipulation.None, false, false).Success);
+            CollectionAssert.DoesNotContain(s.MeetingFlow.PlayerHand, first, "제시한 카드는 손패에서 소진된다.");
+            Assert.AreEqual(chosen.Count - 1, s.MeetingFlow.PlayerHand.Count, "제시한 카드는 보충하지 않는다.");
+        }
+
+        [Test]
         public void MeetingWithoutMajority_AfterTwoVerifications_EndsUnsolved()
         {
             var s = StartContract();
@@ -148,7 +201,7 @@ namespace CaseFileOmission.Tests
 
             Assert.AreEqual(GamePhase.Investigation, s.State.CurrentPhase);
             Assert.AreEqual(TimeBlock.Evening, s.State.CurrentTimeBlock);
-            Assert.AreEqual(12, s.State.RemainingTimeSlots);
+            Assert.AreEqual(32, s.State.RemainingTimeSlots);
         }
 
         [Test]
@@ -210,14 +263,16 @@ namespace CaseFileOmission.Tests
         public void SaveAndLoad_MidInvestigation_RestoresContractCluesAndTime()
         {
             var s = StartContract();
-            var found = s.InvestigateRoom().NewClueIds;
+            var found = s.InvestigateObject(s.Materials.First(m => m.MaterialId.Contains("scene-trace")).ObjectId).NewClueIds;
             var contract = s.CurrentContract;
 
             var json = SaveLoad.SaveGameService.ToJson(s.CaptureSave());
             var loaded = GameSession.Load(SaveLoad.SaveGameService.FromJson(json), new GameSessionConfig { Random = new Random(1) });
 
             Assert.AreEqual(GamePhase.Investigation, loaded.State.CurrentPhase);
-            Assert.AreEqual(11, loaded.State.RemainingTimeSlots);
+            Assert.AreEqual(28, loaded.State.RemainingTimeSlots);
+            Assert.AreEqual(s.WorldMinute, loaded.WorldMinute, "세계 시각도 복원한다.");
+            Assert.AreEqual(s.BlockEndMinute, loaded.BlockEndMinute);
             Assert.IsNotNull(loaded.CurrentContract);
             Assert.AreEqual(contract.Truth.PerpetratorId, loaded.CurrentContract.Truth.PerpetratorId);
             Assert.AreEqual(contract.HandlerPoliceId, loaded.CurrentContract.HandlerPoliceId);

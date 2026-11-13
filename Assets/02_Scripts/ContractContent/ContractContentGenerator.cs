@@ -36,14 +36,33 @@ namespace CaseFileOmission.ContractContent
 
             contract.Truth.VictimId = victimId;
             contract.Truth.PerpetratorId = perpetratorId;
-            contract.Truth.PrimaryMotive ??= "원한(임시)";
-            contract.Truth.Method ??= "둔기로 가격(임시)";
-            contract.Truth.Tool ??= "둔기(임시)";
+            // 진실 세부(방법·도구·동기·관계·세부 종류·날짜)는 후보마다 한 번만 정하고 검증 재시도 중에는 바꾸지 않는다.
+            if (contract.Truth.MethodId == null)
+                CaseDetailGenerator.AssignTruthDetails(contract, _random);
 
-            npcRegistry.Add(new NpcState(victimId, contract.ContractId, NpcActualRole.Victim, PickPersonality()));
-            npcRegistry.Add(new NpcState(perpetratorId, contract.ContractId, NpcActualRole.Perpetrator, PickPersonality()));
-            npcRegistry.Add(new NpcState(witnessId, contract.ContractId, NpcActualRole.Witness, PickPersonality()));
+            var cast = new List<NpcState>
+            {
+                new NpcState(victimId, contract.ContractId, NpcActualRole.Victim, PickPersonality()),
+                new NpcState(perpetratorId, contract.ContractId, NpcActualRole.Perpetrator, PickPersonality()),
+                new NpcState(witnessId, contract.ContractId, NpcActualRole.Witness, PickPersonality())
+            };
+
+            // 04 2026-11-12: 사건 참여 NPC 2~6명. 사건 관계자는 관계·동기·정보 접근을 설명할 때만 둔다(인원 채우기 금지) —
+            // 피해자와 관계(REL)가 있는 인물로만 만들고, 그 관계를 진술·문서 자료의 근거로 쓴다. 0~2명(TEST_TEMP 범위).
+            int related = _random.Next(3);
+            if (related >= 1) cast.Add(new NpcState(RelatedIdFor(contract.ContractId, 'a'), contract.ContractId, NpcActualRole.CaseRelatedA, PickPersonality()));
+            if (related >= 2) cast.Add(new NpcState(RelatedIdFor(contract.ContractId, 'b'), contract.ContractId, NpcActualRole.CaseRelatedB, PickPersonality()));
+
+            var names = CaseCatalog.TempNames.OrderBy(_ => _random.Next()).ToList();
+            for (int i = 0; i < cast.Count; i++)
+            {
+                cast[i].DisplayName = names[i % names.Count];
+                cast[i].Occupation = CaseCatalog.Occupations[_random.Next(CaseCatalog.Occupations.Length)];
+                npcRegistry.Add(cast[i]);
+            }
         }
+
+        public static string RelatedIdFor(string contractId, char key) => $"{contractId}-related-{key}";
 
         private NpcPersonality PickPersonality()
         {
@@ -164,16 +183,25 @@ namespace CaseFileOmission.ContractContent
             }
             built.Timeline = timelineResult.Timeline;
 
+            // 3단계 — 부수 범죄(구현 명세 4.7). 이전 시도의 부수 범죄를 지우고 다시 판정한다. 실패해도 "부수 범죄 없음"으로 진행한다.
+            candidate.SubCrimes.Clear();
+            candidate.SubCrimeLinks.Clear();
+            SubCrimeGenerator.TryAdd(built, _generator, _random);
+
             var materialResult = new EvidenceMaterialGenerator(_random, _config.MaxRetriesPerElement)
                 .Generate(built.Timeline, built.Npcs, built.Rooms);
             Merge(materialResult.Errors);
             built.Materials.AddRange(materialResult.Materials);
 
             AddBodyMaterialIfNeeded(built);
+            CaseDetailGenerator.ApplySubtypeToTimeline(built);
+            CaseDetailGenerator.Enrich(built, _random);
             BindOrganizationTarget(built);
             FillExternalState(built);
 
             ContractTimelineApplier.Apply(built.Timeline, candidate, built.Npcs, built.Occupancy);
+            CaseDetailGenerator.PlaceBody(built);
+            CaseDetailGenerator.BuildPoliceSnapshot(built);
 
             var timeline = built.Timeline;
             var assignments = timeline.Schedules.ToDictionary(
@@ -269,7 +297,8 @@ namespace CaseFileOmission.ContractContent
             var external = built.Contract.ExternalState;
             var discovery = built.Timeline.Discovery;
             string reporter = discovery?.ParticipantIds.FirstOrDefault();
-            external.ReportedSummary = $"{reporter}의 신고(임시 문구)";
+            string reporterName = reporter != null && built.Npcs.Exists(reporter) ? built.Npcs.Get(reporter).DisplayName ?? reporter : "주민";
+            external.ReportedSummary = $"{reporterName}의 신고(임시 문구)";
 
             var coverUp = built.Contract.Truth.CoverUp;
             external.DiffersFromTruth = coverUp != CoverUpMethod.None;

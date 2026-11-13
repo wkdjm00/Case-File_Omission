@@ -91,6 +91,9 @@ namespace CaseFileOmission.ContractContent
         /// <summary>사건 직후 피해자가 현장에서 직접 행동하지 않게 되는지(살인 → 사망, 실종 → 부재).</summary>
         public bool VictimLeavesStoryAfterIncident;
 
+        /// <summary>피해자가 마지막으로 행동한 시각: 자발적 이탈이면 현관 홀로 떠난 시각, 지연 사망이면 숨진 시각(이후 일정 없음). 아니면 -1.</summary>
+        public int VictimDepartureMinute = -1;
+
         public readonly List<TimelineEvent> Events = new List<TimelineEvent>();
         public readonly Dictionary<string, NpcSchedule> Schedules = new Dictionary<string, NpcSchedule>();
         public readonly List<KnowledgeGrant> Knowledge = new List<KnowledgeGrant>();
@@ -208,9 +211,10 @@ namespace CaseFileOmission.ContractContent
             string victimId = contract.Truth.VictimId;
             var crime = contract.PrimaryCrimeType;
 
-            bool victimMustBePresent = crime == CrimeType.Murder || crime == CrimeType.AssaultInjury;
+            bool departs = contract.Truth.VictimDeparted;
+            bool victimMustBePresent = crime == CrimeType.Murder || crime == CrimeType.AssaultInjury || departs;
             bool victimPresent = victimMustBePresent || _random.Next(2) == 0; // 비필수 유형은 균등 선택(가중치 미정)
-            bool victimLeaves = crime == CrimeType.Murder || crime == CrimeType.Missing;
+            bool victimLeaves = crime == CrimeType.Murder || crime == CrimeType.Missing || departs;
             bool hasCoverUp = contract.Truth.CoverUp != CoverUpMethod.None;
 
             string scene = roomIds[_random.Next(roomIds.Count)];
@@ -229,6 +233,12 @@ namespace CaseFileOmission.ContractContent
             var discoverer = discovererCandidates[_random.Next(discovererCandidates.Count)];
             int firstDiscoverySlot = (hasCoverUp ? coverUpSlot : incidentSlot) + 1;
             int discoverySlot = _random.Next(firstDiscoverySlot, slots);
+            // 자발적 이탈: 핵심 사건 뒤 피해자가 현관 홀을 거쳐 스스로 떠난다(이후 일정 없음).
+            int departureSlot = departs ? _random.Next(firstDiscoverySlot, slots) : -1;
+            // 지연 사망(폭행→살인): 공격 뒤 피해자가 이웃 방으로 옮겨 가 늦게 숨진다(ACT-SUB-MUR-02).
+            bool delayed = contract.Truth.DelayedDeath;
+            int deathSlot = delayed ? _random.Next(firstDiscoverySlot, slots) : -1;
+            string deathRoom = delayed ? rooms.GetAdjacentRooms(scene).OrderBy(id => id, StringComparer.Ordinal).ElementAt(_random.Next(rooms.GetAdjacentRooms(scene).Count)) : null;
 
             var required = cast.ToDictionary(n => n.NpcId, n => new Dictionary<int, string>());
             required[perpId][incidentSlot] = scene;
@@ -237,13 +247,23 @@ namespace CaseFileOmission.ContractContent
             foreach (var witness in cast.Where(n => n.ActualRole == NpcActualRole.Witness))
                 required[witness.NpcId][incidentSlot] = scene;
             required[discoverer.NpcId][discoverySlot] = scene;
+            if (departs) required[victimId][departureSlot] = HouseLayoutFactory.EntranceHall;
+            if (delayed) required[victimId][deathSlot] = deathRoom;
 
             // 발견 이전에 현장에 들어온 인물이 있으면 그 사람이 먼저 발견한 셈이 되므로 막는다.
             var forbidden = cast.ToDictionary(n => n.NpcId, n => new Dictionary<int, string>());
-            foreach (var npc in cast.Where(n => n.NpcId != perpId))
+            foreach (var npc in cast.Where(n => n.NpcId != perpId && !((departs || delayed) && n.NpcId == victimId)))
             {
                 for (int s = (hasCoverUp ? coverUpSlot : incidentSlot) + 1; s < discoverySlot; s++)
                     forbidden[npc.NpcId][s] = scene;
+            }
+
+            // 목격자 역할이 아닌 사건 관계자는 핵심 사건·은폐 시각에 현장에 두지 않는다 — 목격자는 실제로 목격한 인물만(07),
+            // 관계자는 관계·동기 설명용이라 우연한 추가 목격으로 증언이 겹치지 않게 한다.
+            foreach (var npc in cast.Where(n => n.ActualRole == NpcActualRole.CaseRelatedA || n.ActualRole == NpcActualRole.CaseRelatedB))
+            {
+                forbidden[npc.NpcId][incidentSlot] = scene;
+                if (hasCoverUp) forbidden[npc.NpcId][coverUpSlot] = scene;
             }
 
             var timeline = new ContractTimeline
@@ -261,7 +281,7 @@ namespace CaseFileOmission.ContractContent
             var walks = new Dictionary<string, string[]>();
             foreach (var npc in cast)
             {
-                int lastSlot = npc.NpcId == victimId && victimLeaves ? incidentSlot : slots - 1;
+                int lastSlot = npc.NpcId == victimId && victimLeaves ? (departs ? departureSlot : delayed ? deathSlot : incidentSlot) : slots - 1;
                 var walk = RandomWalk(roomIds, rooms, distance, lastSlot, required[npc.NpcId], forbidden[npc.NpcId]);
                 if (walk == null)
                     return null;
@@ -288,6 +308,21 @@ namespace CaseFileOmission.ContractContent
                 var after = AddEvent(timeline, TimelineEventKind.Aftermath, M(incidentSlot + 1), M(incidentSlot + 2), walks[perpId][incidentSlot + 1]);
                 after.ParticipantIds.Add(perpId);
                 after.CauseEventIds.Add(core.EventId);
+            }
+
+            if (departs)
+            {
+                var leave = AddEvent(timeline, TimelineEventKind.Aftermath, M(departureSlot), M(departureSlot + 1), HouseLayoutFactory.EntranceHall);
+                leave.ParticipantIds.Add(victimId);
+                leave.CauseEventIds.Add(core.EventId);
+                timeline.VictimDepartureMinute = M(departureSlot);
+            }
+            if (delayed)
+            {
+                var death = AddEvent(timeline, TimelineEventKind.Aftermath, M(deathSlot), M(deathSlot + 1), deathRoom);
+                death.ParticipantIds.Add(victimId);
+                death.CauseEventIds.Add(core.EventId);
+                timeline.VictimDepartureMinute = M(deathSlot);
             }
 
             var discovery = AddEvent(timeline, TimelineEventKind.DiscoveryOrReport, M(discoverySlot), M(discoverySlot + 1), scene);
@@ -493,9 +528,10 @@ namespace CaseFileOmission.ContractContent
                 Add(ContractValidationErrorCode.CONTRADICTION);
 
             // 사망·실종 피해자는 사건 이후 직접 행동하지 않는다.
+            int victimLastMinute = timeline.VictimDepartureMinute >= 0 ? timeline.VictimDepartureMinute + timeline.SlotMinutes : core.EndMinute;
             if (timeline.VictimLeavesStoryAfterIncident
                 && timeline.Schedules.TryGetValue(timeline.VictimId, out var victimSchedule)
-                && victimSchedule.Entries.Any(en => en.EndMinute > core.EndMinute))
+                && victimSchedule.Entries.Any(en => en.EndMinute > victimLastMinute))
                 Add(ContractValidationErrorCode.CONTRADICTION);
 
             // 목격자 역할 인물은 실제로 목격해야 한다.

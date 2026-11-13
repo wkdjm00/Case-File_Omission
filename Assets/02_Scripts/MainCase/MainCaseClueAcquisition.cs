@@ -54,6 +54,8 @@ namespace CaseFileOmission.MainCase
         public int VictimCount;
         public readonly List<string> VictimOccupations = new List<string>();
         public string CauseOfDeathTool;
+        /// <summary>04 도구 카탈로그 ID(TOOL-01 등). 생성 의뢰는 이 값으로 비교한다.</summary>
+        public string CauseOfDeathToolId;
         public NpcPersonality? PerpetratorPersonality;
 
         /// <summary>"부부 또는 연인 관계인 두 사람이 사망한 사건". 현재 사건 데이터에 관계 그래프가 없어 호출자가 판정해 넣는다.</summary>
@@ -71,7 +73,8 @@ namespace CaseFileOmission.MainCase
             var context = new MainCaseClueContext
             {
                 ContractId = contract.ContractId,
-                CauseOfDeathTool = contract.Truth.Tool
+                CauseOfDeathTool = contract.Truth.Tool,
+                CauseOfDeathToolId = contract.Truth.ToolId
             };
 
             foreach (var npc in npcs.GetByContract(contract.ContractId))
@@ -98,25 +101,27 @@ namespace CaseFileOmission.MainCase
     {
         public string SecretaryOccupation = "비서";
         public string KnifeTool = "칼";
+        /// <summary>04 도구 카탈로그의 칼(TOOL-01 칼·날붙이). 03 2026-11-12: 칼 자료는 TOOL-01로 생성한다.</summary>
+        public string KnifeToolId = "TOOL-01";
+        public string KnifeToolCatalogName = "칼·날붙이";
         public int MinimumVictimCountForContactLog = 3;
         public int ContractsAfterNumberNoteForManagementTable = 2;
 
         /// <summary>노션 "의심 많은 자" = 성격 오브젝트 "의심이 많은".</summary>
         public NpcPersonality SuspiciousTrait = NpcPersonality.Suspicious;
 
-        /// <summary>
-        /// 노션 "욕망이 가득한 자". 성격 오브젝트 10종에 같은 표기가 없어 가장 가까운 "욕심이 많은"으로 연결했다.
-        /// 명칭 확정 필요 항목이다.
-        /// </summary>
+        /// <summary>03 2026-11-12 확정: 고위 관계자 서신의 가해자 성격은 '욕심이 많은'.</summary>
         public NpcPersonality DesireTrait = NpcPersonality.Greedy;
 
         /// <summary>
-        /// 대상자 번호 파일의 비밀번호 = "프롤로그 익명 내부 보고서에 적힌 조카의 실험 번호".
-        /// 원문 상세본은 84-031을 쓰지만 같은 문서가 "실험 번호는 최종 설정 전까지 확정하지 않는다"고 하므로 비워 둔다.
+        /// 대상자 번호 파일의 비밀번호. 03 2026-11-12 확정: "84-031은 조카의 번호", 피 묻은 익명 보고서의 84-031을 검색 비밀번호로 쓴다.
         /// </summary>
-        public string SubjectNumberFilePassword;
+        public string SubjectNumberFilePassword = "84-031";
 
-        /// <summary>실험 대상자 관리표의 무작위 등장 판정. 확률이 원문에 없어 기본값은 없음(무작위 경로 사용 불가).</summary>
+        /// <summary>03 2026-11-12 확정: 실험 대상자 관리표의 무작위 등장 확률 25%(조직 전달 경로도 유지).</summary>
+        public float RandomAppearanceChance = 0.25f;
+
+        /// <summary>실험 대상자 관리표의 무작위 등장 판정. 비우면 서비스가 주입받은 난수와 RandomAppearanceChance로 판정한다.</summary>
         public Func<bool> RandomAppearanceRoll;
     }
 
@@ -134,11 +139,17 @@ namespace CaseFileOmission.MainCase
     public sealed class MainCaseClueAcquisitionService
     {
         private readonly MainCaseClueRuleConfig _rules;
+        private readonly Random _random;
 
-        public MainCaseClueAcquisitionService(MainCaseClueRuleConfig rules = null)
+        /// <summary>random을 넘기면 무작위 등장 판정에 쓴다. 넘기지 않고 RandomAppearanceRoll도 없으면 무작위 경로는 쓰지 않는다.</summary>
+        public MainCaseClueAcquisitionService(MainCaseClueRuleConfig rules = null, Random random = null)
         {
             _rules = rules ?? new MainCaseClueRuleConfig();
+            _random = random;
         }
+
+        private bool IsKnife(MainCaseClueContext c) =>
+            c.CauseOfDeathToolId == _rules.KnifeToolId || c.CauseOfDeathTool == _rules.KnifeTool || c.CauseOfDeathTool == _rules.KnifeToolCatalogName;
 
         public static string GetClueName(MainCaseClueCode code) => code switch
         {
@@ -174,7 +185,7 @@ namespace CaseFileOmission.MainCase
                 case MainCaseClueCode.ResultReportRecording:
                 case MainCaseClueCode.ParticipantRosterDeliveryConfirmation:
                     return context.VictimOccupations.Contains(_rules.SecretaryOccupation)
-                           && context.CauseOfDeathTool == _rules.KnifeTool
+                           && IsKnife(context)
                            && context.PerpetratorPersonality == _rules.SuspiciousTrait;
 
                 case MainCaseClueCode.SeniorOfficialLetter:
@@ -220,9 +231,12 @@ namespace CaseFileOmission.MainCase
 
             if (route == MainCaseClueRoute.RandomAppearance)
             {
-                if (_rules.RandomAppearanceRoll == null)
+                if (_rules.RandomAppearanceRoll == null && _random == null)
                     return MainCaseClueAcquireOutcome.RandomPolicyNotConfigured;
-                if (!_rules.RandomAppearanceRoll())
+                bool appeared = _rules.RandomAppearanceRoll != null
+                    ? _rules.RandomAppearanceRoll()
+                    : _random.NextDouble() < _rules.RandomAppearanceChance;
+                if (!appeared)
                     return MainCaseClueAcquireOutcome.RandomRollFailed;
             }
 

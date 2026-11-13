@@ -247,19 +247,21 @@ MonoBehaviour:
   playerFontSize: 32
   charactersPerSecond: 18
   callerAnchor: {fileID: 4804713913719298781}
-  callerScreenOffset: {x: 80, y: 0}
+  callerScreenOffset: {x: 140, y: -32}
   callerWidth: 640
   callerLabel: "\uBC1C\uC2E0\uC790"
-  waveBars: 72
+  waveBars: 90
   waveWidth: 360
-  waveMaxHeight: 105
-  waveOffsetX: 220
-  waveToTextGap: 85
+  waveMaxHeight: 120
+  waveOffsetX: 0
+  waveToTextGap: 45
   bottomGradientHeight: 460
   bottomGradientAlpha: 0.9
   bottomGradientSolid: 0.45
-  callerHazeColor: {r: 0.05, g: 0.09, b: 0.06, a: 0.6}
-  callerHazePadding: {x: 90, y: 60}
+  callerHazeColor: {r: 0.22, g: 0.3, b: 0.22, a: 0.45}
+  callerHazePadding: {x: 340, y: 220}
+  textHazeExtraWidth: 500
+  waveHazeExtraWidth: 200
   autoAdvanceSeconds: 0
 --- !u!114 &3694513252682063916
 MonoBehaviour:

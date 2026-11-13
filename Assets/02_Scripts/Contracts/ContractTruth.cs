@@ -20,6 +20,23 @@ namespace CaseFileOmission.Contracts
         public string RelationshipType;
         public CoverUpMethod CoverUp = CoverUpMethod.None;
 
+        // 04 고정 선택지 ID(표시명은 Method·Tool·PrimaryMotive·RelationshipType). 생성기가 같은 값으로 함께 채운다.
+        public string MethodId;
+        public string ToolId;
+        public string MotiveId;
+        public string RelationshipId;
+        public string RepresentativeSubtypeId;
+        public string ActualSubtypeId;
+
+        /// <summary>피해자가 핵심 사건 뒤 스스로 집을 떠나 소재 미확인(자발적 이탈·은신). 강제 이동이 아니다.</summary>
+        public bool VictimDeparted;
+
+        /// <summary>살인 피해자의 시신이 인계 시점까지 발견되지 않음(시신 은닉).</summary>
+        public bool BodyHidden;
+
+        /// <summary>공격 뒤 한동안 살아 있다가 다른 방에서 숨짐(ACT-SUB-MUR-02). 경찰은 분류 당시 부상만 알았다(폭행→살인).</summary>
+        public bool DelayedDeath;
+
         public readonly List<string> TimelineEvents = new List<string>();
     }
 }

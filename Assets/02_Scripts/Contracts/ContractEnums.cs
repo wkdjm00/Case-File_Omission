@@ -46,7 +46,10 @@ namespace CaseFileOmission.Contracts
         AccidentalDeathDisguise,
         SuicideDisguise,
         DisappearanceDisguise,
-        RecordOrTestimonyTampering
+        RecordOrTestimonyTampering,
+
+        /// <summary>CONCEAL-04 시신 은닉. 인계 시점까지 시신이 발견되지 않는다(ACT-SUB-MUR-04).</summary>
+        BodyConcealment
     }
 
     /// <summary>

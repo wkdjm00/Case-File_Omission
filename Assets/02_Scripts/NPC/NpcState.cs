@@ -17,6 +17,9 @@ namespace CaseFileOmission.NPC
         /// <summary>09페이지 인물 정보 창의 "직업" 항목. 메인 사건 단서 조건("피해자가 비서")에서 쓴다.</summary>
         public string Occupation;
 
+        /// <summary>화면 표시 이름(TEST_TEMP 이름 목록에서 생성). 내부 ID에는 역할이 드러나므로 화면에는 이 값을 쓴다.</summary>
+        public string DisplayName;
+
         /// <summary>§5-2 "생존 여부". 사망한 인물은 직접 행동하지 않는다(§5-1 확정).</summary>
         public bool IsAlive { get; private set; } = true;
 

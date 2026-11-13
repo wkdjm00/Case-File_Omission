@@ -36,6 +36,12 @@ namespace CaseFileOmission.SaveLoad
         /// <summary>의뢰 보고서 목록. 복원 시 같은 ContractId가 없으면 새 보고서를 만들어 추가한다.</summary>
         public List<ContractReportState> Reports;
 
+        /// <summary>NPC·경찰 개인 의견 점수(06). 현재 의뢰의 회의 투표에 쓴다.</summary>
+        public OpinionScoreService Opinions;
+
+        /// <summary>의뢰별 사건보드. 복원 시 같은 ContractId가 없으면 새로 만들어 추가한다.</summary>
+        public List<CaseBoardState> CaseBoards;
+
         public MainCaseProgressTracker MainCase;
         public FinalReportState FinalReport;
         public PostReportBranching PostReport;
@@ -75,8 +81,26 @@ namespace CaseFileOmission.SaveLoad
         /// <summary>현재 의뢰의 사건 현장 방.</summary>
         public string SceneRoomId;
 
-        /// <summary>NPC 행동 갱신에 쓰는 사건 시간표 기준 현재 시각(분).</summary>
+        /// <summary>세계 시각(사건 발생일 00:00 기준 분). NPC 15분 턴과 일정이 이 시각을 쓴다.</summary>
         public int NpcMinute;
+
+        /// <summary>지금 조사 시간대가 시작된 세계 시각(06:00 또는 18:00). 시간대 끝 = 이 값 + 12시간.</summary>
+        public int BlockStartMinute;
+
+        /// <summary>07 2026-11-13: 담당 경찰 대기열(캠페인 시작 시 섞고, 소진 전에는 중복 배정하지 않는다).</summary>
+        public List<string> HandlerQueue = new List<string>();
+
+        /// <summary>직전 의뢰의 담당 경찰(새 대기열의 연속 배정 회피용).</summary>
+        public string LastHandlerPoliceId;
+
+        /// <summary>이번 의뢰에서 회유를 시도했는지(07: 의뢰당 가해자 1명에게 1회).</summary>
+        public bool PersuasionAttempted;
+
+        /// <summary>플레이어가 실제 가해자를 정답으로 식별한 상태가 검증되었는지(의뢰 보고서 판정 correct_supported).</summary>
+        public bool CulpritIdentified;
+
+        /// <summary>NPC별 공개 역할(07 public_role, 값은 Game.PublicRole 이름). 없으면 '사건 관련 인물'.</summary>
+        public Dictionary<string, string> PublicRoles = new Dictionary<string, string>();
 
         /// <summary>지금 의뢰에서 끝난 회의 수. 물리적 증거·기록 조작 가능 시점("첫 회의 종료 이후") 판정에 쓴다.</summary>
         public int MeetingsEndedInContract;
@@ -108,6 +132,7 @@ namespace CaseFileOmission.SaveLoad
                 Npc = CaptureNpc(t),
                 Meeting = CaptureMeeting(t.Meeting),
                 Reports = t.Reports?.Select(CaptureReport).ToArray() ?? Array.Empty<ContractReportSaveData>(),
+                CaseBoards = t.CaseBoards?.Select(CaptureCaseBoard).ToArray() ?? Array.Empty<CaseBoardSaveData>(),
                 MainCase = CaptureMainCase(t),
                 Positions = t.Occupancy?.AllPositions
                     .Select(p => new OccupantPositionDto { OccupantId = p.Key, RoomId = p.Value })
@@ -142,6 +167,7 @@ namespace CaseFileOmission.SaveLoad
             RestoreNpc(data.Npc, t, logger);
             RestoreMeeting(data.Meeting, t.Meeting, logger);
             RestoreReports(data.Reports, t, logger);
+            RestoreCaseBoards(data.CaseBoards, t, logger);
             RestoreMainCase(data.MainCase, t, logger);
             RestorePositions(data.Positions, t.Occupancy, logger);
             RestoreEvents(data.GlobalEvents, t.EventLog, logger);
@@ -165,11 +191,24 @@ namespace CaseFileOmission.SaveLoad
                 Location = c.Location,
                 StartTimeBlock = c.StartTimeBlock,
                 HandlerPoliceId = c.HandlerPoliceId,
+                IncidentDate = c.IncidentDate,
+                FixtureId = c.FixtureId,
+                PlayerStartRoomId = c.PlayerStartRoomId,
+                HasInvestigationStartOverride = c.InvestigationStartMinuteOverride >= 0,
+                InvestigationStartMinuteOverride = c.InvestigationStartMinuteOverride,
+                HasRepresentativeCrimeType = c.RepresentativeCrimeType.HasValue,
+                RepresentativeCrimeType = c.RepresentativeCrimeType ?? c.PrimaryCrimeType,
+                PoliceKnownFacts = c.PoliceKnownFacts.ToArray(),
+                PoliceUnknownFacts = c.PoliceUnknownFacts.ToArray(),
+                PoliceClassificationBasis = c.PoliceClassificationBasis,
+                IncidentClockMinute = c.IncidentClockMinute,
+                HandoverDayOffset = c.HandoverDayOffset,
                 SubCrimes = c.SubCrimeLinks.Select(l => new SubCrimeLinkDto
                 {
                     Type = l.Type,
                     LinkReason = l.LinkReason,
-                    LinkedNpcIds = l.LinkedNpcIds.ToArray()
+                    LinkedNpcIds = l.LinkedNpcIds.ToArray(),
+                    EventId = l.EventId
                 }).ToArray(),
                 PerpetratorId = c.Truth.PerpetratorId,
                 VictimId = c.Truth.VictimId,
@@ -180,6 +219,15 @@ namespace CaseFileOmission.SaveLoad
                 RelationshipType = c.Truth.RelationshipType,
                 CoverUp = c.Truth.CoverUp,
                 TimelineEvents = c.Truth.TimelineEvents.ToArray(),
+                MethodId = c.Truth.MethodId,
+                ToolId = c.Truth.ToolId,
+                MotiveId = c.Truth.MotiveId,
+                RelationshipId = c.Truth.RelationshipId,
+                RepresentativeSubtypeId = c.Truth.RepresentativeSubtypeId,
+                ActualSubtypeId = c.Truth.ActualSubtypeId,
+                VictimDeparted = c.Truth.VictimDeparted,
+                BodyHidden = c.Truth.BodyHidden,
+                DelayedDeath = c.Truth.DelayedDeath,
                 ReportedSummary = c.ExternalState.ReportedSummary,
                 InitialExplanation = c.ExternalState.InitialExplanation,
                 DiffersFromTruth = c.ExternalState.DiffersFromTruth,
@@ -220,7 +268,10 @@ namespace CaseFileOmission.SaveLoad
                 LocationCategory = d.LocationCategory,
                 Location = d.Location,
                 StartTimeBlock = d.StartTimeBlock,
-                HandlerPoliceId = d.HandlerPoliceId
+                HandlerPoliceId = d.HandlerPoliceId,
+                IncidentDate = string.IsNullOrEmpty(d.IncidentDate) ? "1984-10-01" : d.IncidentDate,
+                IncidentClockMinute = Math.Max(0, d.IncidentClockMinute),
+                HandoverDayOffset = Math.Max(1, d.HandoverDayOffset)
             };
 
             if (!string.IsNullOrEmpty(d.HandlerPoliceId) && !PoliceRoster.AllPoliceIds.Contains(d.HandlerPoliceId))
@@ -237,8 +288,16 @@ namespace CaseFileOmission.SaveLoad
                     continue;
                 }
                 c.AddSubCrime(s.Type, s.LinkReason, s.LinkedNpcIds ?? Array.Empty<string>());
+                c.SubCrimeLinks[c.SubCrimeLinks.Count - 1].EventId = s.EventId;
             }
 
+            if (d.HasRepresentativeCrimeType && IsDefined(d.RepresentativeCrimeType)) c.RepresentativeCrimeType = d.RepresentativeCrimeType;
+            c.PoliceKnownFacts.AddRange(d.PoliceKnownFacts ?? Array.Empty<string>());
+            c.PoliceUnknownFacts.AddRange(d.PoliceUnknownFacts ?? Array.Empty<string>());
+            c.PoliceClassificationBasis = d.PoliceClassificationBasis;
+            c.FixtureId = d.FixtureId;
+            c.PlayerStartRoomId = d.PlayerStartRoomId;
+            c.InvestigationStartMinuteOverride = d.HasInvestigationStartOverride ? Math.Max(0, d.InvestigationStartMinuteOverride) : -1;
             c.Truth.PerpetratorId = d.PerpetratorId;
             c.Truth.VictimId = d.VictimId;
             c.Truth.PrimaryMotive = d.PrimaryMotive;
@@ -247,6 +306,15 @@ namespace CaseFileOmission.SaveLoad
             c.Truth.Tool = d.Tool;
             c.Truth.RelationshipType = d.RelationshipType;
             c.Truth.CoverUp = d.CoverUp;
+            c.Truth.MethodId = d.MethodId;
+            c.Truth.ToolId = d.ToolId;
+            c.Truth.MotiveId = d.MotiveId;
+            c.Truth.RelationshipId = d.RelationshipId;
+            c.Truth.RepresentativeSubtypeId = d.RepresentativeSubtypeId;
+            c.Truth.ActualSubtypeId = d.ActualSubtypeId;
+            c.Truth.VictimDeparted = d.VictimDeparted;
+            c.Truth.BodyHidden = d.BodyHidden;
+            c.Truth.DelayedDeath = d.DelayedDeath;
             c.Truth.TimelineEvents.AddRange(d.TimelineEvents ?? Array.Empty<string>());
 
             c.ExternalState.ReportedSummary = d.ReportedSummary;
@@ -283,6 +351,13 @@ namespace CaseFileOmission.SaveLoad
                 NextHandlerPoliceId = t.Campaign?.NextHandlerPoliceId,
                 SceneRoomId = t.Campaign?.SceneRoomId,
                 NpcMinute = t.Campaign?.NpcMinute ?? 0,
+                BlockStartMinute = t.Campaign?.BlockStartMinute ?? 0,
+                HandlerQueue = t.Campaign?.HandlerQueue.ToArray() ?? Array.Empty<string>(),
+                LastHandlerPoliceId = t.Campaign?.LastHandlerPoliceId,
+                PersuasionAttempted = t.Campaign?.PersuasionAttempted ?? false,
+                CulpritIdentified = t.Campaign?.CulpritIdentified ?? false,
+                PublicRoles = t.Campaign?.PublicRoles.Select(p => new PublicRoleDto { NpcId = p.Key, Role = p.Value }).ToArray() ?? Array.Empty<PublicRoleDto>(),
+                Opinions = t.Opinions?.All.Select(o => new OpinionDto { Observer = o.Key.Observer, Suspect = o.Key.Suspect, Value = o.Value }).ToArray() ?? Array.Empty<OpinionDto>(),
                 MeetingsEndedInContract = t.Campaign?.MeetingsEndedInContract ?? 0,
                 RebelContactNpcId = t.Campaign?.RebelContactNpcId,
                 RebelMemoRoomId = t.Campaign?.RebelMemoRoomId,
@@ -302,7 +377,11 @@ namespace CaseFileOmission.SaveLoad
                     SubjectNpcId = m.SubjectNpcId,
                     RebuttedByMaterialIds = m.RebuttedByMaterialIds.ToArray(),
                     FalsehoodReason = m.FalsehoodReason,
-                    IdentifiesPerpetrator = m.IdentifiesPerpetrator
+                    IdentifiesPerpetrator = m.IdentifiesPerpetrator,
+                    ObjectId = m.ObjectId,
+                    RequiresClueId = m.RequiresClueId,
+                    Title = m.Title,
+                    Content = m.Content
                 }).ToArray() ?? Array.Empty<EvidenceMaterialDto>()
             };
         }
@@ -337,6 +416,22 @@ namespace CaseFileOmission.SaveLoad
                 t.Campaign.NextHandlerPoliceId = PoliceRoster.AllPoliceIds.Contains(d.NextHandlerPoliceId) ? d.NextHandlerPoliceId : null;
                 t.Campaign.SceneRoomId = d.SceneRoomId;
                 t.Campaign.NpcMinute = Math.Max(0, d.NpcMinute);
+                t.Campaign.BlockStartMinute = Math.Max(0, d.BlockStartMinute);
+                t.Campaign.HandlerQueue = (d.HandlerQueue ?? Array.Empty<string>()).Where(id => PoliceRoster.AllPoliceIds.Contains(id)).ToList();
+                t.Campaign.LastHandlerPoliceId = PoliceRoster.AllPoliceIds.Contains(d.LastHandlerPoliceId) ? d.LastHandlerPoliceId : null;
+                t.Campaign.PersuasionAttempted = d.PersuasionAttempted;
+                t.Campaign.CulpritIdentified = d.CulpritIdentified;
+                foreach (var r in d.PublicRoles ?? Array.Empty<PublicRoleDto>())
+                {
+                    if (r == null || string.IsNullOrEmpty(r.NpcId) || string.IsNullOrEmpty(r.Role)) continue;
+                    if (!NpcKnown(t, r.NpcId)) { Log(logger, "SAVE_UNKNOWN_NPC_ID", "공개 역할의 NPC가 없어 건너뜁니다.", npcId: r.NpcId); continue; }
+                    t.Campaign.PublicRoles[r.NpcId] = r.Role;
+                }
+                foreach (var o in d.Opinions ?? Array.Empty<OpinionDto>())
+                {
+                    if (o == null || string.IsNullOrEmpty(o.Observer) || string.IsNullOrEmpty(o.Suspect) || float.IsNaN(o.Value)) continue;
+                    t.Opinions?.Restore(o.Observer, o.Suspect, o.Value);
+                }
                 t.Campaign.MeetingsEndedInContract = Math.Max(0, d.MeetingsEndedInContract);
                 t.Campaign.RebelContactNpcId = NpcKnown(t, d.RebelContactNpcId) ? d.RebelContactNpcId : null;
                 if (string.IsNullOrEmpty(d.RebelMemoRoomId) || t.Occupancy == null || t.Occupancy.HasRoom(d.RebelMemoRoomId))
@@ -369,7 +464,11 @@ namespace CaseFileOmission.SaveLoad
                         AboutRoomId = m.AboutRoomId,
                         SubjectNpcId = m.SubjectNpcId,
                         FalsehoodReason = m.FalsehoodReason,
-                        IdentifiesPerpetrator = m.IdentifiesPerpetrator
+                        IdentifiesPerpetrator = m.IdentifiesPerpetrator,
+                        ObjectId = m.ObjectId,
+                        RequiresClueId = m.RequiresClueId,
+                        Title = m.Title,
+                        Content = m.Content
                     };
                     material.StatedInfoIds.AddRange(m.StatedInfoIds ?? Array.Empty<string>());
                     material.RebuttedByMaterialIds.AddRange(m.RebuttedByMaterialIds ?? Array.Empty<string>());
@@ -613,6 +712,7 @@ namespace CaseFileOmission.SaveLoad
                     ActualRole = n.ActualRole,
                     Personality = n.Personality,
                     Occupation = n.Occupation,
+                    DisplayName = n.DisplayName,
                     IsAlive = n.IsAlive,
                     IsCooperatingWithPlayer = n.IsCooperatingWithPlayer,
                     Knowledge = n.KnownInfoIds.Select(info => new NpcKnowledgeDto
@@ -679,6 +779,7 @@ namespace CaseFileOmission.SaveLoad
                     }
 
                     npc.Occupation = dto.Occupation;
+                    npc.DisplayName = dto.DisplayName;
                     if (!dto.IsAlive) npc.MarkDeceased();
                     if (dto.IsCooperatingWithPlayer) npc.MarkCooperating();
                     foreach (var eventId in dto.WitnessedEventIds ?? Array.Empty<string>())
@@ -802,6 +903,70 @@ namespace CaseFileOmission.SaveLoad
                 session.EndSession();
         }
 
+        // ───────────────────────── Case boards ─────────────────────────
+
+        private static CaseBoardSaveData CaptureCaseBoard(CaseBoardState board) => new CaseBoardSaveData
+        {
+            ContractId = board.ContractId,
+            Seed = board.Seed,
+            LayoutVersion = board.AppliedLayoutVersion,
+            Items = board.Items.Select(i => new CaseBoardItemDto
+            {
+                ItemId = i.ItemId,
+                BoardDecorationOnly = i.BoardDecorationOnly,
+                X = i.X,
+                Y = i.Y,
+                RotationDegrees = i.RotationDegrees,
+                OnBoard = i.OnBoard
+            }).ToArray(),
+            Links = board.Links.Select(l => new CaseBoardLinkDto { ItemA = l.ItemA, ItemB = l.ItemB }).ToArray()
+        };
+
+        /// <summary>단서가 아닌(장식이 아닌데 단서 저장소에 없는) 항목과 그 항목을 가리키는 연결선은 건너뛴다.</summary>
+        private static void RestoreCaseBoards(CaseBoardSaveData[] boards, WorldStateTargets t, GameLogger logger)
+        {
+            if (boards == null || t.CaseBoards == null)
+                return;
+
+            foreach (var dto in boards)
+            {
+                if (dto == null || string.IsNullOrEmpty(dto.ContractId))
+                {
+                    Log(logger, "SAVE_INVALID_CASE_BOARD", "의뢰 ID가 없는 사건보드를 건너뜁니다.");
+                    continue;
+                }
+                if (t.CaseBoards.Any(b => b.ContractId == dto.ContractId))
+                    continue;
+
+                var board = new CaseBoardState(dto.ContractId, dto.Seed) { AppliedLayoutVersion = dto.LayoutVersion };
+                foreach (var item in dto.Items ?? Array.Empty<CaseBoardItemDto>())
+                {
+                    if (item == null || string.IsNullOrEmpty(item.ItemId) || board.Get(item.ItemId) != null)
+                        continue;
+                    if (!item.BoardDecorationOnly && t.Clues != null && !t.Clues.Exists(item.ItemId))
+                    {
+                        Log(logger, "SAVE_UNKNOWN_CLUE_ID", "사건보드 항목의 자료가 없어 건너뜁니다.", contractId: dto.ContractId, clueId: item.ItemId);
+                        continue;
+                    }
+                    board.Items.Add(new CaseBoardItem
+                    {
+                        ItemId = item.ItemId,
+                        BoardDecorationOnly = item.BoardDecorationOnly,
+                        X = item.X,
+                        Y = item.Y,
+                        RotationDegrees = item.RotationDegrees,
+                        OnBoard = item.OnBoard
+                    });
+                }
+                foreach (var link in dto.Links ?? Array.Empty<CaseBoardLinkDto>())
+                {
+                    if (link == null || !board.Connect(link.ItemA, link.ItemB))
+                        Log(logger, "SAVE_INVALID_CASE_BOARD_LINK", "사건보드 연결선을 복원하지 못해 건너뜁니다.", contractId: dto.ContractId);
+                }
+                t.CaseBoards.Add(board);
+            }
+        }
+
         // ───────────────────────── Reports ─────────────────────────
 
         private static ContractReportSaveData CaptureReport(ContractReportState report) => new ContractReportSaveData
@@ -818,7 +983,8 @@ namespace CaseFileOmission.SaveLoad
                     LinkedClueIds = entry.LinkedClueIds.ToArray(),
                     ClaimedNpcId = entry.ClaimedNpcId
                 };
-            }).ToArray()
+            }).ToArray(),
+            Slots = report.Slots.Select(s => new ReportSlotDto { Index = s.Index, Unlocked = s.Unlocked, Status = s.Status, LastAnswer = s.LastAnswer }).ToArray()
         };
 
         private static void RestoreReports(ContractReportSaveData[] reports, WorldStateTargets t, GameLogger logger)
@@ -839,6 +1005,15 @@ namespace CaseFileOmission.SaveLoad
                 {
                     report = new ContractReportState(dto.ContractId);
                     t.Reports.Add(report);
+                }
+
+                foreach (var slot in dto.Slots ?? Array.Empty<ReportSlotDto>())
+                {
+                    if (slot == null || !IsDefined(slot.Status)) continue;
+                    var restored = report.GetOrAddSlot(slot.Index);
+                    restored.Unlocked = slot.Unlocked;
+                    restored.Status = slot.Status;
+                    restored.LastAnswer = slot.LastAnswer;
                 }
 
                 foreach (var s in dto.Sections ?? Array.Empty<ReportSectionDto>())

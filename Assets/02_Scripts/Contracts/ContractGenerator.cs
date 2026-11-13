@@ -46,6 +46,74 @@ namespace CaseFileOmission.Contracts
 
         public bool RollOrganizationCondition() => _random.NextDouble() < _config.OrganizationConditionChance;
 
+        private static readonly CrimeType[] CrimeOrder =
+            { CrimeType.Murder, CrimeType.Missing, CrimeType.AssaultInjury, CrimeType.TheftRobbery, CrimeType.Blackmail };
+
+        /// <summary>04 2026-11-12 5×5 상대 가중치(행=대표, 열=실제: 살인/실종/폭행/절도/협박). 같은 유형 8, 조건부 1, 불가 0.</summary>
+        private static readonly int[,] ActualTypeWeights =
+        {
+            { 8, 1, 1, 0, 1 },
+            { 1, 8, 1, 0, 1 },
+            { 1, 1, 8, 0, 0 },
+            { 1, 1, 1, 8, 0 },
+            { 1, 1, 1, 0, 8 },
+        };
+
+        /// <summary>
+        /// 조건부 조합 중 지금 생성기가 원문의 필수 성립 조건을 지킬 수 있는 것만 허용한다("상대 가중치가 1이라는 이유만으로 자동 허용하지 않는다").
+        /// - 살인→실종: 경찰은 혈흔 등으로 사망을 의심했지만 시신·사망 확인 없음. 실제 대상은 살아 있고 소재 미확인.
+        /// - 살인→폭행·상해: 치명적 공격으로 오인했지만 피해자는 살아 있고 비치명적 상해.
+        /// - 절도→폭행·상해: 물품 부재·어질러진 현장으로 절도로 분류, 경찰은 상해를 아직 모름.
+        /// - 협박→폭행·상해 / 협박→실종: 협박을 먼저 접수했고 실제 부상·소재 미확인은 인계 시점에 알려지지 않음.
+        /// - 실종·절도·협박→살인: 시신 은닉으로 인계 시점까지 사망·시신 미확인(<see cref="RequiresHiddenBody"/>).
+        /// - 폭행→실종, 실종→폭행, 실종→협박, 살인→협박: 핵심 사건 뒤 피해자가 스스로 떠나·숨어 소재 미확인(<see cref="RequiresVictimDeparture"/>).
+        /// - 폭행→살인: 공격 뒤 다른 방에서 늦게 숨짐, 인계 시점에 사망 미확인(<see cref="RequiresDelayedDeath"/>).
+        /// - 절도→실종: 가해자의 유인·강제 이동으로 소유자가 실종되고 물건은 소유자와 함께 사라짐(타인의 실제 절도 없음).
+        /// </summary>
+        public static bool IsSupportedCombination(CrimeType representative, CrimeType actual) =>
+            representative == actual
+            || (representative == CrimeType.Murder && (actual == CrimeType.Missing || actual == CrimeType.AssaultInjury || actual == CrimeType.Blackmail))
+            || (representative == CrimeType.Missing && (actual == CrimeType.Murder || actual == CrimeType.AssaultInjury || actual == CrimeType.Blackmail))
+            || (representative == CrimeType.AssaultInjury && (actual == CrimeType.Missing || actual == CrimeType.Murder))
+            || (representative == CrimeType.TheftRobbery && (actual == CrimeType.Murder || actual == CrimeType.AssaultInjury || actual == CrimeType.Missing))
+            || (representative == CrimeType.Blackmail && (actual == CrimeType.Murder || actual == CrimeType.AssaultInjury || actual == CrimeType.Missing));
+
+        /// <summary>
+        /// 조합별 필수 성립 조건에 필요한 경위(04 §5):
+        /// - 피해자 자발적 이탈: 폭행→실종(폭행 뒤 스스로 떠남), 실종→폭행(상해 뒤 소재 미확인), 실종→협박·살인→협박(협박을 피해 스스로 은신).
+        /// - 시신 은닉: 실종→살인·절도→살인·협박→살인(인계 시점까지 사망·시신 미확인).
+        /// </summary>
+        public static bool RequiresVictimDeparture(CrimeType representative, CrimeType actual) =>
+            (representative == CrimeType.AssaultInjury && actual == CrimeType.Missing)
+            || (representative == CrimeType.Missing && (actual == CrimeType.AssaultInjury || actual == CrimeType.Blackmail))
+            || (representative == CrimeType.Murder && actual == CrimeType.Blackmail);
+
+        public static bool RequiresHiddenBody(CrimeType representative, CrimeType actual) =>
+            actual == CrimeType.Murder && representative != CrimeType.Murder && representative != CrimeType.AssaultInjury;
+
+        /// <summary>폭행→살인: 경찰 분류 당시 상해만 확인, 피해자는 이후 다른 방에서 숨졌고 인계 시점에 사망이 확인되지 않았다.</summary>
+        public static bool RequiresDelayedDeath(CrimeType representative, CrimeType actual) =>
+            representative == CrimeType.AssaultInjury && actual == CrimeType.Murder;
+
+        public CrimeType PickActualCrimeType(CrimeType representative)
+        {
+            int row = Array.IndexOf(CrimeOrder, representative);
+            var pool = new List<(CrimeType Type, int Weight)>();
+            for (int col = 0; col < CrimeOrder.Length; col++)
+            {
+                int w = ActualTypeWeights[row, col];
+                if (w > 0 && IsSupportedCombination(representative, CrimeOrder[col]))
+                    pool.Add((CrimeOrder[col], w));
+            }
+            int roll = _random.Next(pool.Sum(p => p.Weight));
+            foreach (var (type, weight) in pool)
+            {
+                if (roll < weight) return type;
+                roll -= weight;
+            }
+            return representative;
+        }
+
         private CrimeType PickWeighted(List<WeightedEntry<CrimeType>> entries, IEnumerable<CrimeType> excluded)
         {
             var excludedSet = excluded != null ? new HashSet<CrimeType>(excluded) : null;
@@ -104,7 +172,10 @@ namespace CaseFileOmission.Contracts
         {
             if (instance == null) throw new ArgumentNullException(nameof(instance));
 
-            instance.PrimaryCrimeType = PickPrimaryCrimeType();
+            // 04 2026-11-12 최종 순서: 대표 유형(경찰 분류)을 확정 가중치로 고른 뒤, 5×5 상대 가중치로 실제 유형을 고른다.
+            var representative = PickPrimaryCrimeType();
+            instance.RepresentativeCrimeType = representative;
+            instance.PrimaryCrimeType = PickActualCrimeType(representative);
 
             // 사용자 지시(2026-11-09): 의뢰 사건 공간에서 실외를 제외했으므로 장소는 항상 실내(주택)만 배정한다.
             instance.LocationCategory = LocationCategory.Indoor;
@@ -112,6 +183,11 @@ namespace CaseFileOmission.Contracts
             instance.StartTimeBlock = _config.DefaultStartTimeBlock;
 
             instance.Truth.CoverUp = PickCoverUp(instance.PrimaryCrimeType);
+            instance.Truth.VictimDeparted = RequiresVictimDeparture(representative, instance.PrimaryCrimeType);
+            instance.Truth.BodyHidden = RequiresHiddenBody(representative, instance.PrimaryCrimeType);
+            instance.Truth.DelayedDeath = RequiresDelayedDeath(representative, instance.PrimaryCrimeType);
+            if (instance.Truth.BodyHidden) instance.Truth.CoverUp = CoverUpMethod.BodyConcealment;
+            else if (instance.Truth.VictimDeparted) instance.Truth.CoverUp = CoverUpMethod.None;
 
             instance.OrgCondition = new OrganizationCondition();
             if (RollOrganizationCondition())

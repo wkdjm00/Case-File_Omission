@@ -58,6 +58,22 @@ namespace CaseFileOmission.Reports
                 entry.LinkedClueIds.Add(clueId);
         }
 
+        public bool UnlinkClue(ReportSection section, string clueId) => _sections[section].LinkedClueIds.Remove(clueId);
+
+        /// <summary>자연어 핵심 문장 슬롯 상태(04 V-13). 목표 자체는 의뢰 데이터에서 다시 만들 수 있어 저장하지 않는다.</summary>
+        public readonly List<ReportSlotState> Slots = new List<ReportSlotState>();
+
+        public ReportSlotState GetOrAddSlot(int index)
+        {
+            var slot = Slots.Find(s => s.Index == index);
+            if (slot == null)
+            {
+                slot = new ReportSlotState { Index = index };
+                Slots.Add(slot);
+            }
+            return slot;
+        }
+
         public void MarkSubmitted() => IsSubmitted = true;
     }
 }

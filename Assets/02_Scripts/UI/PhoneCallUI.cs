@@ -36,20 +36,20 @@ namespace CaseFileOmission.UI
         [Tooltip("상대 대사를 붙일 3D 위치(수화기의 듣는 쪽). 비우면 화면 위쪽 가운데.")]
         [SerializeField] private Transform callerAnchor;
         [Tooltip("붙인 위치(듣는 쪽)에서 대사 묶음까지의 화면상 오프셋(px, 1920x1080 기준). x: 글자 왼쪽 끝, y: 음파 기준선 높이.")]
-        [SerializeField] private Vector2 callerScreenOffset = new Vector2(80f, 0f);
+        [SerializeField] private Vector2 callerScreenOffset = new Vector2(140f, -32f);
         [Tooltip("대사 한 줄 최대 폭(px). 넘으면 참고 이미지처럼 두 줄로 접힌다.")]
         [SerializeField] private float callerWidth = 640f;
         [SerializeField] private string callerLabel = "발신자";
 
         [Header("음파 (참고 이미지 비율: 글자 폭의 40% 지점에서 시작해 글자 오른쪽 끝을 살짝 넘김)")]
-        [SerializeField, Range(16, 160)] private int waveBars = 72;
+        [SerializeField, Range(16, 160)] private int waveBars = 90;
         [SerializeField] private float waveWidth = 360f;
         [Tooltip("가장 높이 솟은 막대의 전체 높이(px, 기준선 위아래 합)")]
-        [SerializeField] private float waveMaxHeight = 105f;
-        [Tooltip("글자 왼쪽 끝에서 음파가 시작하는 위치(px)")]
-        [SerializeField] private float waveOffsetX = 220f;
+        [SerializeField] private float waveMaxHeight = 120f;
+        [Tooltip("글자 왼쪽 끝에서 음파가 시작하는 위치(px). 수화기 듣는 쪽 끝에서 음파가 뻗어 나오게 맞춘 값.")]
+        [SerializeField] private float waveOffsetX = 0f;
         [Tooltip("음파 기준선에서 첫 줄 글자 윗선까지 간격(px)")]
-        [SerializeField] private float waveToTextGap = 85f;
+        [SerializeField] private float waveToTextGap = 45f;
 
         [Header("아래 그라데이션")]
         [SerializeField] private float bottomGradientHeight = 460f;
@@ -59,9 +59,13 @@ namespace CaseFileOmission.UI
 
         [Header("상대 대사 뒤 번짐")]
         [Tooltip("대사 뒤에 깔리는 탁한 녹색 번짐")]
-        [SerializeField] private Color callerHazeColor = new Color(0.05f, 0.09f, 0.06f, 0.6f);
-        [Tooltip("음파·글자가 차지한 영역보다 번짐이 바깥으로 더 퍼지는 폭(px)")]
-        [SerializeField] private Vector2 callerHazePadding = new Vector2(90f, 60f);
+        [SerializeField] private Color callerHazeColor = new Color(0.22f, 0.30f, 0.22f, 0.45f);
+        [Tooltip("음파·글자가 각각 차지한 영역보다 번짐이 바깥으로 더 퍼지는 폭(px)")]
+        [SerializeField] private Vector2 callerHazePadding = new Vector2(340f, 220f);
+        [Tooltip("글자 번짐만 양옆으로 더 늘리는 폭(px)")]
+        [SerializeField] private float textHazeExtraWidth = 500f;
+        [Tooltip("음파 번짐만 양옆으로 더 늘리는 폭(px)")]
+        [SerializeField] private float waveHazeExtraWidth = 200f;
 
         [Header("넘기기")]
         [Tooltip("대사를 다 보여 준 뒤 자동으로 넘어가는 시간(초). 0이면 클릭해야 넘어간다.")]
@@ -85,7 +89,7 @@ namespace CaseFileOmission.UI
         private readonly List<GameObject> _choiceButtons = new List<GameObject>();
         private Texture2D _dashTexture, _gradientTexture, _hazeTexture;
         private Material _textMaterial, _callerMaterial;
-        private RectTransform _haze;
+        private RectTransform _waveHaze, _textHaze;
 
         private WaveformModel _wave;
         private TypewriterSequence _typing;
@@ -120,7 +124,8 @@ namespace CaseFileOmission.UI
         {
             _playerGroup.gameObject.SetActive(false);
             _callerGroup.gameObject.SetActive(true);
-            string prefix = string.IsNullOrEmpty(label ?? callerLabel) ? string.Empty : (label ?? callerLabel) + ": ";
+            string name = string.IsNullOrEmpty(label) ? callerLabel : label;
+            string prefix = string.IsNullOrEmpty(name) ? string.Empty : name + ": ";
             StartLine(_callerText, prefix, text, onDone);
             FitHazeToCallerText();
         }
@@ -210,16 +215,29 @@ namespace CaseFileOmission.UI
             UpdateCallerPosition();
         }
 
-        /// <summary>번짐을 음파 + 이번 대사 전체(다 나왔을 때 크기)에 맞춘다. 글자 없는 빈 곳까지 덮지 않게.</summary>
+        /// <summary>글자 번짐을 이번 대사 전체(다 나왔을 때 크기)에 맞춘다.</summary>
         private void FitHazeToCallerText()
         {
-            if (_haze == null) return;
+            if (_textHaze == null) return;
             float width = _callerText.rectTransform.rect.width;
             Vector2 textSize = _callerText.GetPreferredValues(_callerText.text, width, 0f);
-            float w = Mathf.Max(waveOffsetX + waveWidth, Mathf.Min(textSize.x, width));
-            float h = WaveCenterFromTop + waveToTextGap + textSize.y;
-            _haze.sizeDelta = new Vector2(w, h) + callerHazePadding * 2f;
-            _haze.anchoredPosition = new Vector2(-callerHazePadding.x, callerHazePadding.y);
+            float w = Mathf.Min(textSize.x, width);
+            float top = WaveCenterFromTop + waveToTextGap;
+            _textHaze.anchoredPosition = new Vector2(w * 0.5f, -(top + textSize.y * 0.5f));
+            _textHaze.sizeDelta = new Vector2(w + textHazeExtraWidth * 2f, textSize.y) + callerHazePadding * 2f;
+        }
+
+        /// <summary>대사 묶음 안의 번짐 하나(가운데 기준으로 놓음)</summary>
+        private RectTransform NewHaze(string name)
+        {
+            var rect = NewRect(name, _callerGroup);
+            rect.anchorMin = rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0.5f, 0.5f);
+            var image = rect.gameObject.AddComponent<RawImage>();
+            image.texture = _hazeTexture;
+            image.color = callerHazeColor;
+            image.raycastTarget = false;
+            return rect;
         }
 
         private void FinishLine()
@@ -245,7 +263,7 @@ namespace CaseFileOmission.UI
             if (_bars == null || !_callerGroup.gameObject.activeSelf) return;
             // 화면이 작아 캔버스가 줄어도 실제 화면에서 최소 1픽셀 굵기는 남게(안 그러면 가는 선이 사라졌다 나타났다 함)
             float minPx = 1f / Mathf.Max(_canvas.scaleFactor, 0.01f);
-            float lineWidth = Mathf.Max(3f, minPx * 1.5f);
+            float lineWidth = Mathf.Max(2f, minPx);   // 참고 이미지처럼 가늘게(실제 화면 1픽셀 이상)
             _baseline.sizeDelta = new Vector2(_baseline.sizeDelta.x, lineWidth);
             for (int i = 0; i < _bars.Length; i++)
             {
@@ -313,16 +331,12 @@ namespace CaseFileOmission.UI
             // 글자가 커서 긴 대사는 참고 이미지처럼 두 줄로 접힌다
             _callerGroup.sizeDelta = new Vector2(Mathf.Max(waveOffsetX + waveWidth, callerWidth), WaveCenterFromTop + waveToTextGap + callerFontSize * 3.4f);
 
-            // 뒤에 깔리는 탁한 녹색 번짐(밝은 배경에서도 글자가 보이게). 먼저 만들어야 맨 뒤에 그려진다.
-            // 크기는 대사마다 글자 영역에 맞춘다(FitHazeToCallerText).
-            var haze = NewRect("Haze", _callerGroup);
-            haze.anchorMin = haze.anchorMax = new Vector2(0f, 1f);
-            haze.pivot = new Vector2(0f, 1f);
-            _haze = haze;
-            var hazeImage = haze.gameObject.AddComponent<RawImage>();
-            hazeImage.texture = _hazeTexture;
-            hazeImage.color = callerHazeColor;
-            hazeImage.raycastTarget = false;
+            // 뒤에 깔리는 탁한 녹색 번짐 두 개(음파 뒤, 글자 뒤). 먼저 만들어야 맨 뒤에 그려진다.
+            // 음파 번짐은 고정, 글자 번짐은 대사마다 글자 영역에 맞춘다(FitHazeToCallerText).
+            _waveHaze = NewHaze("WaveHaze");
+            _waveHaze.anchoredPosition = new Vector2(waveOffsetX + waveWidth * 0.5f, -WaveCenterFromTop);
+            _waveHaze.sizeDelta = new Vector2(waveWidth + waveHazeExtraWidth * 2f, waveMaxHeight) + callerHazePadding * 2f;
+            _textHaze = NewHaze("TextHaze");
 
             var wave = NewRect("Waveform", _callerGroup);
             wave.anchorMin = wave.anchorMax = new Vector2(0f, 1f);
@@ -513,7 +527,7 @@ namespace CaseFileOmission.UI
         private static Texture2D MakeDashTexture()
         {
             var tex = new Texture2D(2, 1, TextureFormat.RGBA32, false) { wrapMode = TextureWrapMode.Repeat, filterMode = FilterMode.Bilinear, name = "PhoneCallDash" };
-            tex.SetPixels32(new[] { new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 40) });
+            tex.SetPixels32(new[] { new Color32(255, 255, 255, 255), new Color32(255, 255, 255, 110) });
             tex.Apply();
             return tex;
         }
@@ -543,11 +557,10 @@ namespace CaseFileOmission.UI
                 {
                     float dx = (x + 0.5f) / w * 2f - 1f;
                     float dy = (y + 0.5f) / h * 2f - 1f;
-                    // 초타원(지수 4): 원보다 모서리가 살아 있어 네모난 느낌이 은은하게 남는다
-                    float r = Mathf.Pow(Mathf.Pow(Mathf.Abs(dx), 4f) + Mathf.Pow(Mathf.Abs(dy), 4f), 0.25f);
-                    // 가운데만 살짝 평평하고 바깥으로 넓게 흐려져 번진 빛처럼 보이게
-                    float a = 1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.25f, 1f, r));
-                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, Mathf.Pow(a, 1.3f)));
+                    // 초타원(지수 3): 원보다 살짝 네모나지만, 가장자리를 아주 넓게 흐려 모서리가 거의 드러나지 않게
+                    float r = Mathf.Pow(Mathf.Pow(Mathf.Abs(dx), 3f) + Mathf.Pow(Mathf.Abs(dy), 3f), 1f / 3f);
+                    float a = 1f - Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(r));
+                    tex.SetPixel(x, y, new Color(1f, 1f, 1f, Mathf.Pow(a, 1.8f)));
                 }
             tex.Apply();
             return tex;

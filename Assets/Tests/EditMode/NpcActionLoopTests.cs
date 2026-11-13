@@ -22,7 +22,7 @@ namespace CaseFileOmission.Tests
             var npc = new NpcState("npc-1", "c1", NpcActualRole.Victim, NpcPersonality.Indifferent);
             npc.MarkDeceased();
             registry.Add(npc);
-            occupancy.PlaceAt("npc-1", HouseLayoutFactory.LivingRoom);
+            occupancy.PlaceAt("npc-1", HouseLayoutFactory.EntranceHall);
 
             var loop = new NpcActionLoop(registry, occupancy, rooms, new NpcInfoTransferService(new Random(1)));
             var result = loop.DecideAndAct("npc-1", "c1");
@@ -41,8 +41,8 @@ namespace CaseFileOmission.Tests
 
             registry.Add(informed);
             registry.Add(uninformed);
-            occupancy.PlaceAt("npc-informed", HouseLayoutFactory.LivingRoom);
-            occupancy.PlaceAt("npc-uninformed", HouseLayoutFactory.LivingRoom);
+            occupancy.PlaceAt("npc-informed", HouseLayoutFactory.EntranceHall);
+            occupancy.PlaceAt("npc-uninformed", HouseLayoutFactory.EntranceHall);
 
             var loop = new NpcActionLoop(registry, occupancy, rooms, new NpcInfoTransferService(new Random(1)));
             var result = loop.DecideAndAct("npc-uninformed", "c1");
@@ -65,8 +65,8 @@ namespace CaseFileOmission.Tests
 
             registry.Add(informed);
             registry.Add(uninformed);
-            occupancy.PlaceAt("npc-informed", HouseLayoutFactory.LivingRoom);
-            occupancy.PlaceAt("npc-uninformed", HouseLayoutFactory.LivingRoom);
+            occupancy.PlaceAt("npc-informed", HouseLayoutFactory.EntranceHall);
+            occupancy.PlaceAt("npc-uninformed", HouseLayoutFactory.EntranceHall);
 
             // BlindlyTrusting(+15) 발신자와 낮은 시드 조합으로 성공을 유도한다. 성공하지 못해도
             // TryTransfer 결과와 NpcState 반영이 항상 일치하는지만 검증한다.
@@ -84,14 +84,14 @@ namespace CaseFileOmission.Tests
             var (registry, rooms, occupancy) = BuildScene();
             var npc = new NpcState("npc-1", "c1", NpcActualRole.Witness, NpcPersonality.Indifferent);
             registry.Add(npc);
-            occupancy.PlaceAt("npc-1", HouseLayoutFactory.LivingRoom);
+            occupancy.PlaceAt("npc-1", HouseLayoutFactory.EntranceHall);
 
             var loop = new NpcActionLoop(registry, occupancy, rooms, new NpcInfoTransferService(new Random(1)));
             var result = loop.DecideAndAct("npc-1", "c1");
 
             // 07 확정: 할 일이 없으면 대기한다(무작위 이동하지 않는다).
             Assert.AreEqual(NpcActionType.Stay, result.ActionType);
-            Assert.AreEqual(HouseLayoutFactory.LivingRoom, occupancy.GetRoom("npc-1"));
+            Assert.AreEqual(HouseLayoutFactory.EntranceHall, occupancy.GetRoom("npc-1"));
         }
 
         [Test]
@@ -104,8 +104,8 @@ namespace CaseFileOmission.Tests
             var uninformed = new NpcState("npc-uninformed", "c1", NpcActualRole.Witness, NpcPersonality.Indifferent);
             registry.Add(informed);
             registry.Add(uninformed);
-            occupancy.PlaceAt("npc-informed", HouseLayoutFactory.LivingRoom);
-            occupancy.PlaceAt("npc-uninformed", HouseLayoutFactory.LivingRoom);
+            occupancy.PlaceAt("npc-informed", HouseLayoutFactory.EntranceHall);
+            occupancy.PlaceAt("npc-uninformed", HouseLayoutFactory.EntranceHall);
 
             // roll 0.0 < 최소 5%이므로 전달은 반드시 성공한다.
             var transfer = new NpcInfoTransferService(new FixedRandom(0.0));
@@ -137,7 +137,7 @@ namespace CaseFileOmission.Tests
             registry.Add(informedElsewhere);
             registry.Add(npc);
             occupancy.PlaceAt("npc-informed", HouseLayoutFactory.Bedroom);
-            occupancy.PlaceAt("npc-1", HouseLayoutFactory.LivingRoom);
+            occupancy.PlaceAt("npc-1", HouseLayoutFactory.EntranceHall);
 
             var loop = new NpcActionLoop(registry, occupancy, rooms, new NpcInfoTransferService(new Random(1)));
             var result = loop.DecideAndAct("npc-1", "c1");

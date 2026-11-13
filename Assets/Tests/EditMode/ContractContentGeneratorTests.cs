@@ -32,9 +32,11 @@ namespace CaseFileOmission.Tests
 
             Assert.IsTrue(npcRegistry.Exists(contract.Truth.PerpetratorId));
             Assert.IsTrue(npcRegistry.Exists(contract.Truth.VictimId));
-            Assert.AreEqual(3, npcRegistry.GetByContract("c1").Count);
+            // 04 2026-11-12: 참여 NPC 2~6명 — 가해자·피해자·목격자 + 관계 설명용 사건 관계자 0~2명.
+            Assert.That(npcRegistry.GetByContract("c1").Count, Is.InRange(3, 5));
             Assert.IsFalse(string.IsNullOrEmpty(contract.Truth.PrimaryMotive));
-            Assert.IsFalse(string.IsNullOrEmpty(contract.Truth.Tool));
+            Assert.IsFalse(string.IsNullOrEmpty(contract.Truth.MethodId), "방법은 04 고정 선택지에서 정한다");
+            Assert.IsFalse(string.IsNullOrEmpty(contract.Truth.ToolId), "도구 없음(TOOL-00)도 선택지다");
         }
 
         [Test]

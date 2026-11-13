@@ -1,0 +1,21 @@
+{
+    "name": "CaseFileOmission.Playtest.Editor",
+    "rootNamespace": "CaseFileOmission.Playtest.Editor",
+    "references": [
+        "CaseFileOmission.Playtest",
+        "CaseFileOmission.Props",
+        "CaseFileOmission.UI",
+        "CaseFileOmission.Room"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -318,6 +318,10 @@ namespace CaseFileOmission.NPC
         /// </summary>
         public bool IsTrusted(string actorId, string targetId) => _relationships.GetTrust(actorId, targetId) > 0f;
 
+        /// <summary>그 시각 일정상 목적 공간. 일정이 없으면 null.</summary>
+        public string GetScheduledRoom(string npcId, int minute) =>
+            _schedules.TryGetValue(npcId, out var s) ? s.GetScheduledRoom(minute) : null;
+
         public void SetSchedule(NpcSchedule schedule)
         {
             if (schedule == null) throw new ArgumentNullException(nameof(schedule));
