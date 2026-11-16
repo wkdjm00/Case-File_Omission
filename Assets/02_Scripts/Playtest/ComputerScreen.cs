@@ -172,8 +172,11 @@ namespace CaseFileOmission.Playtest
 
         private bool IsUnlocked(string personId) => _unlockedPersonCodes.Contains(PlaytestTexts.PersonCode(personId));
 
+        private const string OrgDocPrefix = "ORGDOC-";
+
         private void OpenDoc(string id)
         {
+            if (id.StartsWith(OrgDocPrefix)) S.OrgSupplementary.MarkRead(id.Substring(OrgDocPrefix.Length));
             if (_openDocIds.Contains(id)) return;
             if (_openDocIds.Count >= 2) _openDocIds.RemoveAt(0);
             _openDocIds.Add(id);
@@ -241,12 +244,54 @@ namespace CaseFileOmission.Playtest
                 main.Docs.Add(new Doc
                 {
                     Id = "MC-" + (GameSession.StableSeed(name) % 9000 + 1000),
-                    Title = name,
-                    Body = $"[{name}]\n확보 시점: 완료 의뢰 {S.MainCase.ContractsCompletedSinceAcquired(name)}건 전\n\n(원문은 「03 — 메인 사건」 문서 원문으로 교체 — TEST_TEMP)"
+                    // 같은 문서명의 다른 판본(예: 참가자 운영 규칙 안내문 배포본·내부 상세본)은 문서 번호로 구분해 따로 보인다.
+                    Title = MainCaseDocumentCatalog.DisplayTitle(name),
+                    Body = string.IsNullOrEmpty(MainCaseDocumentCatalog.Header(name))
+                        ? MainCaseDocumentBody(name)
+                        : MainCaseDocumentCatalog.Header(name) + "\n────────\n" + MainCaseDocumentBody(name)
                 });
             }
             cases.Add(main);
+
+            // 06 조직 전달 자료 폴더: 보고서마다 따로 등록, 목록에는 제목·수신 시각·새 자료 표시·열람 여부만 보인다.
+            // 진실 단계명·제공 확률·조건·판정 결과는 보이지 않는다. 전달된 자료는 계속 보관하고 다시 열 수 있다.
+            var org = new CaseEntry { Name = "조직 전달 자료" };
+            foreach (var state in S.DeliveredOrgReports)
+            {
+                var def = Organization.OrgSupplementarySupportService.GetDefinition(state.Id);
+                if (def == null) continue;
+                org.Docs.Add(new Doc
+                {
+                    Id = OrgDocPrefix + state.Id,
+                    Title = $"{(state.Read ? "" : "[새 자료] ")}{def.Title} · 수신 {PlaytestTexts.WorldClock(S, state.DeliveredWorldMinute)}{(state.Read ? " · 열람함" : "")}",
+                    Body = def.Body
+                });
+            }
+            cases.Add(org);
             return cases;
+        }
+
+        /// <summary>메인 사건 문서 본문. 노션 원문을 확보한 문서는 원문을, 나머지는 자리표시 문구를 보여 준다.</summary>
+        private string MainCaseDocumentBody(string name)
+        {
+            switch (name)
+            {
+                case MainCaseClueNames.BloodiedRebelReport: return EndingScripts.BloodiedRebelReport;
+                case MainCaseClueNames.FamilyDeathReport: return EndingScripts.FamilyDeathReport;
+                case MainCaseClueNames.FamilyNotificationRecord: return EndingScripts.FamilyNotificationRecord;
+                case MainCaseClueNames.NieceDeathReport:
+                    // 03 2026-11-13: 조카 사망 보고서를 열면 형제자매 가족 사망 보고서와 연락 담당 코드(경-84-07)를 비교할 수 있다.
+                    return (MainCaseDocumentTexts.Bodies.TryGetValue(name, out var report)
+                               ? report
+                               : $"[{name}]\n문서 번호 내안-84-1014-27 · 국가보안국 특별조사과 · 실험 대상자 84-031") +
+                           (S.MainCase.HasAcquired(MainCaseClueNames.FamilyDeathReport)
+                               ? "\n\n[대조] 연락 담당 코드 경-84-07 — 「형제자매 가족 사망·사고 처리 보고서」의 연락 담당 코드와 같다."
+                               : "");
+                default:
+                    return MainCaseDocumentTexts.Bodies.TryGetValue(name, out var original)
+                        ? original
+                        : $"[{name}]\n확보 시점: 완료 의뢰 {S.MainCase.ContractsCompletedSinceAcquired(name)}건 전\n\n(노션 원문이 아직 없는 문서 — TEST_TEMP)";
+            }
         }
 
         // ───────── 서재 컴퓨터: 대상자 번호 파일 ─────────

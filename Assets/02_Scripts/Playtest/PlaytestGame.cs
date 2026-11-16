@@ -165,7 +165,7 @@ namespace CaseFileOmission.Playtest
                 GoDesk();
             }, true, 50);
             Ui.Button(body, "불러오기", LoadGame, System.IO.File.Exists(SavePath));
-            Ui.Line(body, "조작: 왼쪽 클릭 선택 · 휠 확대/축소 · 오른쪽 드래그/WASD 이동(현장) · F1 개발용 패널 · F5 저장 · F9 불러오기", 18, Ui.DimTextColor);
+            Ui.Line(body, "조작(현장): 바닥 클릭으로 이동 · 가까이 가서 E로 조사·대화 · 휠로 카메라 거리 / 책상: 물건 클릭 · F1 개발용 패널 · F5 저장 · F9 불러오기", 18, Ui.DimTextColor);
         }
 
         public void GoDesk()
@@ -181,11 +181,19 @@ namespace CaseFileOmission.Playtest
             if (Session.State.CurrentPhase != GamePhase.Investigation) { Toast("진행 중인 조사가 없습니다. 전화로 의뢰를 받으세요."); return; }
             CloseWindow();
             Current = View.Board;
-            // 현장에 들어올 때마다 플레이어가 있는 방을 비스듬히 내려다본다(말과 이름표가 읽히는 거리). 이후 WASD·휠로 옮길 수 있다.
-            _boardCamPos = BoardView.RoomCenter(Session.PlayerRoom) + new Vector3(0f, 13f, -9f);
-            _boardCamRot = Quaternion.Euler(55f, 0f, 0f);
-            MainCamera.transform.SetPositionAndRotation(_boardCamPos, _boardCamRot);
             Board.SyncPieces(Session, animate: false);
+            Board.SyncObjects(Session);
+            // 탐사 카메라는 캐릭터 뒤쪽 45도에서 따라간다. 들어올 때는 그 자리로 바로 놓는다.
+            var me = Board.PlayerPiece(Session);
+            if (me != null)
+            {
+                var back = -me.forward; back.y = 0;
+                if (back.sqrMagnitude < 0.01f) back = Vector3.back;
+                var focus = me.position + Vector3.up * 0.6f;
+                _boardCamPos = focus + (back.normalized + Vector3.up).normalized * _camDistance;
+                _boardCamRot = Quaternion.LookRotation(focus - _boardCamPos);
+            }
+            MainCamera.transform.SetPositionAndRotation(_boardCamPos, _boardCamRot);
             Board.HighlightRooms(Session);
             Board.ShowExchanges(Session);
             RefreshHud();
@@ -240,6 +248,7 @@ namespace CaseFileOmission.Playtest
             if (Current == View.Board)
             {
                 Board.SyncPieces(Session, animatePieces);
+                Board.SyncObjects(Session);
                 Board.HighlightRooms(Session);
                 Board.ShowExchanges(Session);
             }
@@ -324,18 +333,12 @@ namespace CaseFileOmission.Playtest
                 BuildBlockEndedModal();
             }
 
-            Ui.Line(content, "— 이동(0분) · 바닥 클릭도 가능 —", 18, Ui.DimTextColor);
-            foreach (var next in s.Rooms.GetAdjacentRooms(room).OrderBy(r => r))
-                Ui.Button(content, "→ " + PlaytestTexts.Room(next), () => Act(s.MovePlayer(next)), !s.State.IsTimeBlockEnded);
+            // 이동은 바닥 클릭으로만 한다(사용자 지정 — 방 단위 이동 버튼 없음). 클릭한 위치까지 걸어가며 시간은 들지 않는다.
+            Ui.Line(content, "— 이동: 가고 싶은 바닥을 클릭 (0분) —", 18, Ui.DimTextColor);
 
-            Ui.Line(content, "— 이 방의 조사 대상 (각 1시간) —", 18, Ui.DimTextColor);
+            Ui.Line(content, "— 이 방의 조사 대상 (가까이 가서 E · 각 1시간) —", 18, Ui.DimTextColor);
             foreach (var obj in s.GetInvestigationObjects().Where(o => o.RoomId == room))
-            {
-                string oid = obj.ObjectId;
-                bool done = s.InvestigatedObjectIds.Contains(oid);
-                Ui.Button(content, (done ? "✓ " : "") + obj.Name, () => InvestigateObject(oid),
-                    !s.State.IsTimeBlockEnded && s.State.RemainingTimeSlots >= GameSession.InvestigateCost, 40, done ? Ui.SubPanelColor : (Color?)null);
-            }
+                Ui.Line(content, (s.InvestigatedObjectIds.Contains(obj.ObjectId) ? "✓ " : "· ") + obj.Name, 18);
             int talking = s.CurrentOverhearableExchanges().Count;
             Ui.Button(content, talking > 0 ? $"엿듣기 30분 — 지금 이 방에서 오가는 대화 {talking}건" : "엿듣기 — 지금 이 방에서 오가는 대화가 없다", () => Act(s.Overhear()),
                 talking > 0 && !s.State.IsTimeBlockEnded && s.State.RemainingTimeSlots >= GameSession.OverhearCost);
@@ -351,7 +354,6 @@ namespace CaseFileOmission.Playtest
                 Ui.Line(content, label, 19);
                 var row = Ui.Row(content);
                 string id = npc.NpcId;
-                Ui.Button(row, "대화 30분", () => Talk(id), npc.IsAlive && !s.State.IsTimeBlockEnded, 44, null, 17);
                 Ui.Button(row, "관찰 30분", () => ObserveNpc(id), npc.IsAlive && !s.State.IsTimeBlockEnded, 44, null, 17);
                 Ui.Button(row, "회유 1시간", () => Persuade(id), npc.IsAlive && !s.State.IsTimeBlockEnded && !s.Campaign.PersuasionAttempted, 44, null, 17);
             }
@@ -461,24 +463,6 @@ namespace CaseFileOmission.Playtest
             Act(result, result.Success ? (s.LastPersuasion != null && s.LastPersuasion.Success ? "회유 성공 — 아는 정보를 털어놓는다." : "회유 실패.") : null);
         }
 
-        /// <summary>08: 말을 클릭하면 바로 행동하지 않고 행동 아이콘(대화·관찰·회유와 소모 시간)을 띄운다.</summary>
-        private void ShowActionIcons(string npcId)
-        {
-            var s = Session;
-            var npc = s.Npcs.Get(npcId);
-            bool here = s.Occupancy.HasPosition(npcId) && s.Occupancy.GetRoom(npcId) == s.PlayerRoom;
-            bool can = here && npc.IsAlive && !s.State.IsTimeBlockEnded;
-            Ui.Clear(_modalLayer);
-            var modal = Ui.Anchor(Ui.Panel(_modalLayer, "ActionIcons"), 0.4f, 0.36f, 0.6f, 0.66f);
-            Ui.Vertical(modal, 8, 14);
-            Ui.Line(modal, $"{PlaytestTexts.TempName(s, npcId)} · {PlaytestTexts.PublicRole(s, npc)}", 22);
-            Ui.Line(modal, $"얼굴: {PlaytestTexts.FaceObject(npc.Personality)} ({PlaytestTexts.Personality(npc.Personality)}){(npc.IsAlive ? "" : " · 사망")}", 17, Ui.DimTextColor);
-            Ui.Button(modal, "[말] 대화 · 30분", () => { Ui.Clear(_modalLayer); Talk(npcId); }, can, 46);
-            Ui.Button(modal, "[눈] 관찰 · 30분", () => { Ui.Clear(_modalLayer); ObserveNpc(npcId); }, can, 46);
-            Ui.Button(modal, "[손] 회유 · 1시간", () => { Ui.Clear(_modalLayer); Persuade(npcId); }, can && !s.Campaign.PersuasionAttempted, 46);
-            Ui.Button(modal, "닫기", () => Ui.Clear(_modalLayer));
-        }
-
         private void ConfirmAbandon()
         {
             var modal = Ui.Anchor(Ui.Panel(_modalLayer, "Abandon"), 0.38f, 0.4f, 0.62f, 0.6f);
@@ -542,6 +526,9 @@ namespace CaseFileOmission.Playtest
             }
             else if (s.State.CurrentPhase == GamePhase.Idle)
             {
+                // 06: 조직 보조 자료가 전달된 경계마다 전화 1회로 알린다.
+                if (s.ConsumeOrgDeliveryCall())
+                    steps.Add(CallStep.Say("조직", GameSession.OrgDeliveryPhoneLine));
                 var offer = s.OfferContract();
                 if (offer == null)
                 {
@@ -790,6 +777,10 @@ namespace CaseFileOmission.Playtest
             {
                 Ui.Line(content, $"[실제 진실] 유형 {PlaytestTexts.Crime(c.PrimaryCrimeType)}(경찰 분류 {PlaytestTexts.Crime(c.PoliceCrimeType)}) · 세부 {c.Truth.ActualSubtypeId} · 가해자 {PlaytestTexts.TempName(s, c.Truth.PerpetratorId)} / 피해자 {PlaytestTexts.TempName(s, c.Truth.VictimId)} / 방법 {c.Truth.Method} / 도구 {c.Truth.Tool} / 동기 {c.Truth.PrimaryMotive} / 은폐 {c.Truth.CoverUp}", 17);
                 Ui.Line(content, $"[공식 결론] 지목 {c.OfficialConclusion.OfficiallyAccusedNpcId ?? "-"} · {c.OfficialConclusion.Outcome} · 확정 {c.OfficialConclusion.IsFinalized}", 17);
+                if (c.PlannedMainCaseClue != null)
+                    Ui.Line(content, $"[메인 단서 배치] {c.PlannedMainCaseClue} · 위치 {(c.PlannedClueObjectId != null ? PlaytestTexts.Room(ContractContent.CaseCatalog.ObjectRoom(c.PlannedClueObjectId)) + " " + ContractContent.CaseCatalog.ObjectName(c.PlannedClueObjectId) : "사건 현장")}" +
+                                     (c.DocumentHolderNpcId != null ? $" · 보유자 {PlaytestTexts.TempName(s, c.DocumentHolderNpcId)}({c.DocumentHolderTag})" : "") +
+                                     $" · 사건일 {c.IncidentDate} · 추가 피해자 {c.Truth.AdditionalVictimIds.Count}명", 17);
                 foreach (var npc in s.Npcs.All.Where(n => n.ContractId == c.ContractId))
                     Ui.Line(content, $"  {PlaytestTexts.TempName(s, npc.NpcId)}: 실제 {npc.ActualRole} · 지식 {npc.KnownInfoIds.Count} · 믿음 {npc.Beliefs.Count} · 플레이어 의심 {s.Relationships.GetSuspicion(npc.NpcId, s.PlayerId):0} · 위치 {(s.Occupancy.HasPosition(npc.NpcId) ? PlaytestTexts.Room(s.Occupancy.GetRoom(npc.NpcId)) : "-")}", 16);
             }
@@ -840,8 +831,12 @@ namespace CaseFileOmission.Playtest
                                                      || Session.PostReport.PhoneStage == PhoneCallStage.AwaitingAnswer));
             Desk.SetLabelsVisible(!_phone.InCall);
 
-            if (_phone.InCall || WindowLayer.childCount > 0 || _modalLayer.childCount > 0) return;
-            if (Current == View.Board) UpdateBoardCamera(kb);
+            bool blocked = _phone.InCall || WindowLayer.childCount > 0 || _modalLayer.childCount > 0;
+            UpdateInteractionPrompt(blocked);
+            if (blocked) return;
+            if (Current == View.Board) UpdateBoardCamera();
+
+            if (Current == View.Board && kb != null && kb.eKey.wasPressedThisFrame) InteractNearest();
 
             var mouse = Mouse.current;
             if (mouse == null || !mouse.leftButton.wasPressedThisFrame) return;
@@ -855,39 +850,112 @@ namespace CaseFileOmission.Playtest
             }
             else if (Current == View.Board && Session.State.CurrentPhase == GamePhase.Investigation && !Session.State.IsTimeBlockEnded)
             {
+                // 탐사 조작(사용자 지정): 바닥을 클릭하면 그 위치로 걸어간다. 인물을 클릭하면 그 인물 앞까지 걸어간다.
                 var piece = hit.collider.GetComponentInParent<PieceView>();
-                if (piece != null && Session.Npcs.Exists(piece.OccupantId) && Board.IsPieceVisible(piece.OccupantId)) { ShowActionIcons(piece.OccupantId); return; }
-                var floor = hit.collider.GetComponent<RoomFloorMarker>();
-                if (floor != null && floor.RoomId != Session.PlayerRoom)
-                    Act(Session.MovePlayer(floor.RoomId));
+                Vector3 point = hit.point;
+                if (piece != null && piece.OccupantId != Session.PlayerId)
+                {
+                    var me = Board.PlayerPiece(Session);
+                    var toward = me != null ? (me.position - piece.transform.position) : Vector3.back;
+                    toward.y = 0;
+                    point = piece.transform.position + (toward.sqrMagnitude > 0.01f ? toward.normalized : Vector3.back) * 0.9f;
+                }
+                else if (hit.collider.GetComponent<RoomFloorMarker>() == null) return;
+                WalkTo(point);
             }
         }
 
-        private void UpdateBoardCamera(Keyboard kb)
+        /// <summary>
+        /// 클릭 지점으로 걷는다. 다른 방이면 방 그래프 경로를 따라 인접한 방으로 한 칸씩 이동 판정(06: 이동 0시간)을 한 뒤 문을 거쳐 걷는다.
+        /// </summary>
+        private void WalkTo(Vector3 point)
         {
-            var t = MainCamera.transform;
-            Vector3 move = Vector3.zero;
-            if (kb != null)
+            var s = Session;
+            string from = s.PlayerRoom;
+            string to = BoardView.RoomAtPoint(point);
+            if (to == null) return;
+            if (to != from)
             {
-                if (kb.wKey.isPressed) move += Vector3.forward;
-                if (kb.sKey.isPressed) move += Vector3.back;
-                if (kb.aKey.isPressed) move += Vector3.left;
-                if (kb.dKey.isPressed) move += Vector3.right;
+                var path = s.Rooms.FindPath(from, to);
+                if (path == null) return;
+                foreach (var room in path)
+                {
+                    var r = s.MovePlayer(room);
+                    if (!r.Success) { Toast(PlaytestTexts.Failure(r.Failure)); return; }
+                }
             }
+            Board.WalkPlayerTo(s, point, from);
+            AfterStateChange();
+        }
+
+        /// <summary>가까이 있는 대상과 상호작용(E): 조사 오브젝트는 조사(1시간), NPC는 대화(30분).</summary>
+        private void InteractNearest()
+        {
+            if (Session.State.CurrentPhase != GamePhase.Investigation || Session.State.IsTimeBlockEnded) return;
+            switch (Board.FindInteractable(Session, out var id))
+            {
+                case BoardView.InteractableKind.Object: InvestigateObject(id); break;
+                case BoardView.InteractableKind.Npc: Talk(id); break;
+            }
+        }
+
+        private RectTransform _promptPanel;
+        private Text _promptText;
+
+        /// <summary>상호작용 안내(사용자 지정): 가능한 대상에 접근했을 때만 화면 아래에 띄운다.</summary>
+        private void UpdateInteractionPrompt(bool blocked)
+        {
+            if (_promptPanel == null)
+            {
+                _promptPanel = Ui.Anchor(Ui.Panel((RectTransform)_toastLayer.parent, "InteractionPrompt", new Color(0, 0, 0, 0.75f)), 0.38f, 0.07f, 0.62f, 0.13f);
+                _promptText = Ui.Label(_promptPanel, "", 22, Ui.TextColor, TextAnchor.MiddleCenter);
+                Ui.Stretch(_promptText.rectTransform, 8, 2, 8, 2);
+            }
+            string text = null;
+            if (!blocked && Current == View.Board && Session.State.CurrentPhase == GamePhase.Investigation && !Session.State.IsTimeBlockEnded)
+            {
+                switch (Board.FindInteractable(Session, out var id))
+                {
+                    case BoardView.InteractableKind.Object:
+                        bool done = Session.InvestigatedObjectIds.Contains(id);
+                        text = $"[E] 조사 — {ContractContent.CaseCatalog.ObjectName(id)} (1시간){(done ? " · 조사함" : "")}";
+                        break;
+                    case BoardView.InteractableKind.Npc:
+                        text = $"[E] 대화 — {PlaytestTexts.TempName(Session, id)} (30분)";
+                        break;
+                }
+            }
+            _promptPanel.gameObject.SetActive(text != null);
+            if (text != null) _promptText.text = text;
+        }
+
+        private float _camDistance = 4.5f;
+
+        /// <summary>
+        /// 탐사 카메라(사용자 지정): 캐릭터 뒤쪽에서 45도로 내려다보며 따라간다. 휠로 거리만 조절한다.
+        /// </summary>
+        private void UpdateBoardCamera()
+        {
+            var me = Board.PlayerPiece(Session);
+            if (me == null) return;
             var mouse = Mouse.current;
-            if (mouse != null && mouse.rightButton.isPressed)
-            {
-                var d = mouse.delta.ReadValue();
-                move += new Vector3(-d.x, 0, -d.y) * 0.08f;
-            }
-            t.position += move * (kb != null && kb.shiftKey.isPressed ? 30f : 14f) * Time.deltaTime * (mouse != null && mouse.rightButton.isPressed ? 4f : 1f);
             if (mouse != null)
             {
                 float scroll = mouse.scroll.ReadValue().y;
                 if (Mathf.Abs(scroll) > 0.01f && (EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject()))
-                    t.position += t.forward * Mathf.Sign(scroll) * 2f;
+                    _camDistance = Mathf.Clamp(_camDistance - Mathf.Sign(scroll) * 0.6f, 2.5f, 12f);
             }
+            var back = -me.forward;
+            back.y = 0;
+            if (back.sqrMagnitude < 0.01f) back = Vector3.back;
+            var focus = me.position + Vector3.up * 0.6f;
+            var desired = focus + (back.normalized + Vector3.up).normalized * _camDistance; // 45도: 수평·수직 같은 비율
+            var t = MainCamera.transform;
+            float k = 1f - Mathf.Exp(-6f * Time.deltaTime);
+            t.position = Vector3.Lerp(t.position, desired, k);
+            t.rotation = Quaternion.Slerp(t.rotation, Quaternion.LookRotation(focus - desired), k);
             _boardCamPos = t.position;
+            _boardCamRot = t.rotation;
         }
     }
 }

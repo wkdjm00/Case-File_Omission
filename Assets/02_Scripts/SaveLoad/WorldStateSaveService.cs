@@ -55,6 +55,7 @@ namespace CaseFileOmission.SaveLoad
         public PolicePursuitController Pursuit;
         public FirearmState Firearm;
         public OrganizationSupportClueService OrganizationSupport;
+        public OrgSupplementarySupportService OrgSupplementary;
 
         /// <summary>의뢰 생성·종료 처리에 쓰는 의뢰 간 값.</summary>
         public CampaignProgress Campaign;
@@ -77,6 +78,21 @@ namespace CaseFileOmission.SaveLoad
 
         /// <summary>담당 경찰 사망으로 끝난 뒤 정해진 다음 담당 경찰(+15 대상). 없으면 null.</summary>
         public string NextHandlerPoliceId;
+
+        /// <summary>담당 경찰 사망의 추가 +10을 다음 담당에게 아직 적용하지 않았는지(07 2026-11-13 저장 항목).</summary>
+        public bool PendingHandlerDeathBonus;
+
+        /// <summary>떠나지 않고 완료한 일반 의뢰 수(조직 보조 자료 조건 D 계산용).</summary>
+        public int CompletedContractCount;
+
+        /// <summary>진실 단계(이름)가 열린 시점의 완료 의뢰 수. 조건 D = 그 뒤 추가로 완료한 의뢰 2건.</summary>
+        public Dictionary<string, int> StageUnlockedAtCompleted = new Dictionary<string, int>();
+
+        /// <summary>의뢰에 실제로 배치된 메인 사건 원본 자료 이름(조직 보조 자료의 "원본 자료의 실제 존재" 판정).</summary>
+        public HashSet<string> GeneratedMainDocuments = new HashSet<string>();
+
+        /// <summary>조직 보조 자료가 전달된 뒤 아직 알리지 않은 전화 1회.</summary>
+        public bool PendingOrgDeliveryCall;
 
         /// <summary>현재 의뢰의 사건 현장 방.</summary>
         public string SceneRoomId;
@@ -228,6 +244,12 @@ namespace CaseFileOmission.SaveLoad
                 VictimDeparted = c.Truth.VictimDeparted,
                 BodyHidden = c.Truth.BodyHidden,
                 DelayedDeath = c.Truth.DelayedDeath,
+                AdditionalVictimIds = c.Truth.AdditionalVictimIds.ToArray(),
+                VictimsAreCouple = c.Truth.VictimsAreCouple,
+                PlannedMainCaseClue = c.PlannedMainCaseClue,
+                PlannedClueObjectId = c.PlannedClueObjectId,
+                DocumentHolderNpcId = c.DocumentHolderNpcId,
+                DocumentHolderTag = c.DocumentHolderTag,
                 ReportedSummary = c.ExternalState.ReportedSummary,
                 InitialExplanation = c.ExternalState.InitialExplanation,
                 DiffersFromTruth = c.ExternalState.DiffersFromTruth,
@@ -315,6 +337,13 @@ namespace CaseFileOmission.SaveLoad
             c.Truth.VictimDeparted = d.VictimDeparted;
             c.Truth.BodyHidden = d.BodyHidden;
             c.Truth.DelayedDeath = d.DelayedDeath;
+            c.Truth.AdditionalVictimIds.Clear();
+            c.Truth.AdditionalVictimIds.AddRange((d.AdditionalVictimIds ?? Array.Empty<string>()).Where(id => !string.IsNullOrEmpty(id)));
+            c.Truth.VictimsAreCouple = d.VictimsAreCouple;
+            c.PlannedMainCaseClue = d.PlannedMainCaseClue;
+            c.PlannedClueObjectId = d.PlannedClueObjectId;
+            c.DocumentHolderNpcId = d.DocumentHolderNpcId;
+            c.DocumentHolderTag = d.DocumentHolderTag;
             c.Truth.TimelineEvents.AddRange(d.TimelineEvents ?? Array.Empty<string>());
 
             c.ExternalState.ReportedSummary = d.ReportedSummary;
@@ -341,6 +370,7 @@ namespace CaseFileOmission.SaveLoad
             return new CampaignSaveData
             {
                 PursuitStage = t.Pursuit?.Stage ?? PursuitStage.NotActive,
+                PursuitTriggerId = t.Pursuit?.ActiveTriggerId,
                 HasFirearm = t.Firearm != null,
                 FirearmLoaded = t.Firearm?.CurrentAmmo ?? 0,
                 FirearmReserve = t.Firearm?.ReserveAmmo ?? 0,
@@ -349,6 +379,16 @@ namespace CaseFileOmission.SaveLoad
                 PreviousConditionType = t.Campaign?.PreviousConditionType ?? OrganizationConditionType.None,
                 HandlerStartingSuspicion = t.Campaign?.HandlerStartingSuspicion ?? 0f,
                 NextHandlerPoliceId = t.Campaign?.NextHandlerPoliceId,
+                PendingHandlerDeathBonus = t.Campaign?.PendingHandlerDeathBonus ?? false,
+                CompletedContractCount = t.Campaign?.CompletedContractCount ?? 0,
+                StageUnlocks = t.Campaign?.StageUnlockedAtCompleted.Select(p => new StageUnlockDto { Stage = p.Key, CompletedAt = p.Value }).ToArray() ?? Array.Empty<StageUnlockDto>(),
+                GeneratedMainDocuments = t.Campaign?.GeneratedMainDocuments.ToArray() ?? Array.Empty<string>(),
+                PendingOrgDeliveryCall = t.Campaign?.PendingOrgDeliveryCall ?? false,
+                OrgReports = t.OrgSupplementary?.States.Select(s => new OrgReportDto
+                {
+                    Id = s.Id, RollStatus = s.RollStatus, DeliveryStatus = s.DeliveryStatus, EligibilityBand = s.EligibilityBand,
+                    FirstEligibleContractId = s.FirstEligibleContractId, DeliveredWorldMinute = s.DeliveredWorldMinute, Read = s.Read
+                }).ToArray() ?? Array.Empty<OrgReportDto>(),
                 SceneRoomId = t.Campaign?.SceneRoomId,
                 NpcMinute = t.Campaign?.NpcMinute ?? 0,
                 BlockStartMinute = t.Campaign?.BlockStartMinute ?? 0,
@@ -394,13 +434,27 @@ namespace CaseFileOmission.SaveLoad
             if (t.Pursuit != null)
             {
                 if (IsDefined(d.PursuitStage))
-                    t.Pursuit.RestoreStage(d.PursuitStage);
+                    t.Pursuit.RestoreStage(d.PursuitStage, d.PursuitTriggerId);
                 else
                     Log(logger, "SAVE_INVALID_ENUM", "추적 단계 값이 올바르지 않아 비활성으로 둡니다.");
             }
 
             if (t.Firearm != null && d.HasFirearm)
                 t.Firearm.RestoreAmmo(d.FirearmLoaded, d.FirearmReserve);
+
+            if (t.OrgSupplementary != null)
+            {
+                foreach (var r in d.OrgReports ?? Array.Empty<OrgReportDto>())
+                {
+                    if (r == null) continue;
+                    bool ok = IsDefined(r.RollStatus) && IsDefined(r.DeliveryStatus) && t.OrgSupplementary.Restore(new OrgReportState
+                    {
+                        Id = r.Id, RollStatus = r.RollStatus, DeliveryStatus = r.DeliveryStatus, EligibilityBand = r.EligibilityBand,
+                        FirstEligibleContractId = r.FirstEligibleContractId, DeliveredWorldMinute = r.DeliveredWorldMinute, Read = r.Read
+                    });
+                    if (!ok) Log(logger, "SAVE_UNKNOWN_ORG_REPORT", $"조직 보조 자료 '{r.Id}'를 알 수 없거나 상태 값이 올바르지 않아 건너뜁니다.");
+                }
+            }
 
             if (t.OrganizationSupport != null)
             {
@@ -414,6 +468,13 @@ namespace CaseFileOmission.SaveLoad
                 t.Campaign.PreviousConditionType = IsDefined(d.PreviousConditionType) ? d.PreviousConditionType : OrganizationConditionType.None;
                 t.Campaign.HandlerStartingSuspicion = float.IsNaN(d.HandlerStartingSuspicion) ? 0f : d.HandlerStartingSuspicion;
                 t.Campaign.NextHandlerPoliceId = PoliceRoster.AllPoliceIds.Contains(d.NextHandlerPoliceId) ? d.NextHandlerPoliceId : null;
+                t.Campaign.PendingHandlerDeathBonus = d.PendingHandlerDeathBonus;
+                t.Campaign.CompletedContractCount = Math.Max(0, d.CompletedContractCount);
+                foreach (var u in d.StageUnlocks ?? Array.Empty<StageUnlockDto>())
+                    if (u != null && !string.IsNullOrEmpty(u.Stage)) t.Campaign.StageUnlockedAtCompleted[u.Stage] = Math.Max(0, u.CompletedAt);
+                foreach (var doc in d.GeneratedMainDocuments ?? Array.Empty<string>())
+                    if (!string.IsNullOrEmpty(doc)) t.Campaign.GeneratedMainDocuments.Add(doc);
+                t.Campaign.PendingOrgDeliveryCall = d.PendingOrgDeliveryCall;
                 t.Campaign.SceneRoomId = d.SceneRoomId;
                 t.Campaign.NpcMinute = Math.Max(0, d.NpcMinute);
                 t.Campaign.BlockStartMinute = Math.Max(0, d.BlockStartMinute);
@@ -511,7 +572,10 @@ namespace CaseFileOmission.SaveLoad
                     ClueId = r.ClueId,
                     DiscoveredAtTicks = r.DiscoveredAtUtc.Ticks,
                     WorldState = r.WorldState,
-                    ConfirmedByPoliceIds = r.ConfirmedByPoliceIds.ToArray()
+                    ConfirmedByPoliceIds = r.ConfirmedByPoliceIds.ToArray(),
+                    Access = r.Access,
+                    Concealment = r.Concealment,
+                    ConcealmentDetected = r.ConcealmentDetected
                 }).ToArray();
             }
 
@@ -610,6 +674,11 @@ namespace CaseFileOmission.SaveLoad
 
                         foreach (var policeId in r.ConfirmedByPoliceIds ?? Array.Empty<string>())
                             record.MarkConfirmedByPolice(policeId);
+
+                        if (IsDefined(r.Access) && IsDefined(r.Concealment))
+                            record.RestoreConcealment(r.Access, r.Concealment, r.ConcealmentDetected);
+                        else
+                            Log(logger, "SAVE_INVALID_ENUM", "단서 은폐 상태가 올바르지 않아 접근 가능으로 둡니다.", clueId: d.ClueId);
                     }
                     else
                     {

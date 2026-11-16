@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using CaseFileOmission.Core;
 
@@ -13,6 +14,17 @@ namespace CaseFileOmission.Police
         ResolvedFailure
     }
 
+    /// <summary>추적 진행 중 상태 검사 결과.</summary>
+    public enum PursuitCheckResult
+    {
+        NotActive,
+        Continuing,
+        /// <summary>의심도 100인 경찰이 있다 — 추적 성공 판정보다 체포가 우선한다.</summary>
+        ArrestRequired,
+        /// <summary>의심도 70 이상 경찰이 2명 이하가 되어 추적 성공으로 끝났다.</summary>
+        CompletedSuccess
+    }
+
     /// <summary>
     /// 07페이지 2026-11-09 확정: 발동 조건은 경찰 5명 중 3명 이상이 각각 의심도 70% 이상인 상태에서
     /// 추가 사망 사건이 발생하는 것. 진행 단계는 발동→정보수집→플레이어대응→결과판정이며,
@@ -25,6 +37,17 @@ namespace CaseFileOmission.Police
         private readonly GameEventLog _eventLog;
 
         public PursuitStage Stage { get; private set; } = PursuitStage.NotActive;
+
+        /// <summary>지금 추적을 일으킨 사망 이벤트 ID(완료 처리 중복 방지용). 추적 중이 아니면 null.</summary>
+        public string ActiveTriggerId { get; private set; }
+
+        public const float HighSuspicionThreshold = 70f;
+        public const int TriggerCount = 3;
+        /// <summary>2026-11-16 확정: 의심도 70 이상 경찰이 이 수 이하로 줄면 추적 성공.</summary>
+        public const int SuccessMaxHighSuspicionCount = 2;
+        /// <summary>07 3-3: 추적 완료 후 경찰 의심도를 약 50으로 조정한다.</summary>
+        public const float PostPursuitSuspicion = 50f;
+        public const float ArrestThreshold = 100f;
 
         public PolicePursuitController(PoliceSuspicionService suspicionService, GameEventLog eventLog)
         {
@@ -57,7 +80,36 @@ namespace CaseFileOmission.Police
                 return false; // 이미 같은 사망 사건으로 처리됨
 
             Stage = PursuitStage.Triggered;
+            ActiveTriggerId = deathEventId;
             return true;
+        }
+
+        /// <summary>
+        /// 추적 중 상태를 검사한다(의심도가 바뀔 때마다 호출).
+        /// 1) 살아 있는 경찰 중 한 명이라도 의심도 100이면 체포가 우선한다 — 다른 경찰이 70 미만으로 내려가도 무시하지 않는다.
+        /// 2) 2026-11-16 확정: 살아 있는 경찰 중 의심도 70 이상이 2명 이하로 줄면 추적 성공 — 의심도가 50보다 높은 경찰을
+        ///    약 50(50)으로 낮추고 추적을 끝내 일반 의뢰 진행으로 돌아간다. 같은 추적의 완료는 이벤트 ID로 한 번만 처리한다.
+        /// "관련 경찰"은 의심도가 50보다 높은 경찰로 본다(50 이하인 경찰의 의심도는 올리지 않는다 — 구현 해석).
+        /// </summary>
+        public PursuitCheckResult Evaluate(string playerId, IEnumerable<string> alivePoliceIds)
+        {
+            if (Stage == PursuitStage.NotActive) return PursuitCheckResult.NotActive;
+            var alive = alivePoliceIds.ToList();
+            if (alive.Any(id => _suspicionService.GetSuspicion(id, playerId) >= ArrestThreshold))
+                return PursuitCheckResult.ArrestRequired;
+
+            int high = alive.Count(id => _suspicionService.GetSuspicion(id, playerId) >= HighSuspicionThreshold);
+            if (high > SuccessMaxHighSuspicionCount) return PursuitCheckResult.Continuing;
+
+            var evt = new GameEvent("pursuit-complete:" + (ActiveTriggerId ?? "unknown"), GameEventType.Custom, contractId: null, payload: "pursuit-success");
+            if (_eventLog.TryRecord(evt))
+            {
+                foreach (var id in alive.Where(id => _suspicionService.GetSuspicion(id, playerId) > PostPursuitSuspicion))
+                    _suspicionService.SetSuspicion(id, playerId, PostPursuitSuspicion);
+            }
+            Stage = PursuitStage.NotActive;
+            ActiveTriggerId = null;
+            return PursuitCheckResult.CompletedSuccess;
         }
 
         public void AdvanceToGatheringInformation()
@@ -97,7 +149,11 @@ namespace CaseFileOmission.Police
         }
 
         /// <summary>저장/불러오기 전용. 전이 규칙을 다시 실행하지 않고 단계만 되살린다.</summary>
-        public void RestoreStage(PursuitStage stage) => Stage = stage;
+        public void RestoreStage(PursuitStage stage, string activeTriggerId = null)
+        {
+            Stage = stage;
+            ActiveTriggerId = stage == PursuitStage.NotActive ? null : activeTriggerId;
+        }
 
         /// <summary>추적 실패 후에도 즉시 게임 오버가 아니므로, 다시 대응을 이어갈 수 있도록 재개한다.</summary>
         public void ResumeAfterFailedResponse()

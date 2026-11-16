@@ -74,7 +74,11 @@ namespace CaseFileOmission.MainCase
             {
                 ContractId = contract.ContractId,
                 CauseOfDeathTool = contract.Truth.Tool,
-                CauseOfDeathToolId = contract.Truth.ToolId
+                CauseOfDeathToolId = contract.Truth.ToolId,
+                // 생성기가 부부·연인(REL-02) 피해자 두 명을 함께 숨지게 만든 사건이면 참.
+                TwoDeceasedInSpousalOrRomanticRelationship = contract.Truth.VictimsAreCouple
+                    && contract.PrimaryCrimeType == CrimeType.Murder
+                    && contract.Truth.AdditionalVictimIds.Count > 0
             };
 
             foreach (var npc in npcs.GetByContract(contract.ContractId))

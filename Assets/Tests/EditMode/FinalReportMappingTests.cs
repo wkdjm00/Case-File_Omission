@@ -43,7 +43,12 @@ namespace CaseFileOmission.Tests
             Assert.AreEqual(MainCaseClueNames.ParticipantRosterDeliveryConfirmation, report.Blanks[2].RequiredClueName);
             Assert.AreEqual(MainCaseClueNames.UpperClassHospitalityRecord, report.Blanks[5].RequiredClueName);
             Assert.AreEqual(MainCaseClueNames.ProductSalesSettlement, report.Blanks[6].RequiredClueName);
-            Assert.AreEqual(MainCaseClueNames.GovernmentDepartmentContactLog, report.Blanks[8].RequiredClueName);
+            // 8번: 참가자 명단 전달 확인서 + 정부 부서 연락 기록 종합(2026-11-10 원문, 2번과 공유).
+            Assert.AreEqual(BlankMatchMode.AllOf, report.Blanks[8].MatchMode);
+            CollectionAssert.AreEquivalent(new[]
+            {
+                MainCaseClueNames.ParticipantRosterDeliveryConfirmation, MainCaseClueNames.GovernmentDepartmentContactLog
+            }, report.Blanks[8].AcceptedClueNames);
             Assert.AreEqual(MainCaseClueNames.RebelInternalCircularMemo, report.Blanks[11].RequiredClueName);
             Assert.AreEqual(MainCaseClueNames.RebelInternalCircularMemo, report.Blanks[12].RequiredClueName);
 

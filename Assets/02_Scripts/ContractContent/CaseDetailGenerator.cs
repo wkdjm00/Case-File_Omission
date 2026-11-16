@@ -38,16 +38,19 @@ namespace CaseFileOmission.ContractContent
         /// 진실 세부를 고정 선택지에서 고른다. 동기는 양립 후보 중 균등(2026-11-13). 세부 종류는 유효 후보 중 균등.
         /// 사건 날짜는 1984-10-01~12-31 균등. 조사 시작 시간대는 의뢰 데이터로 정한다(아침·저녁 중 생성 시 결정).
         /// </summary>
-        public static void AssignTruthDetails(ContractInstance contract, Random random)
+        public static void AssignTruthDetails(ContractInstance contract, Random random, ContractConstraints constraints = null)
         {
             var truth = contract.Truth;
             var crime = contract.PrimaryCrimeType;
 
             // 폭행 뒤 스스로 떠난 실종은 핵심 행위가 선행 폭행이다(실종 자체에는 범행 방법이 없다 — 자발적 이탈).
             var methods = CaseCatalog.MethodsFor(truth.VictimDeparted && crime == CrimeType.Missing ? CrimeType.AssaultInjury : crime);
+            // 메인 사건 단서 제약(예: 칼 TOOL-01)이 있으면 그 도구를 쓸 수 있는 방법만 고른다. 후보가 없으면 제약 검증에서 버려진다.
+            var allowed = constraints?.FilterMethods(methods) ?? methods;
+            if (allowed.Count > 0) methods = allowed;
             truth.MethodId = methods[random.Next(methods.Count)];
             var tools = CaseCatalog.ToolsFor(truth.MethodId);
-            truth.ToolId = tools[random.Next(tools.Count)];
+            truth.ToolId = constraints?.ToolId != null && tools.Contains(constraints.ToolId) ? constraints.ToolId : tools[random.Next(tools.Count)];
             truth.MotiveId = CaseCatalog.Motives[random.Next(CaseCatalog.Motives.Length)].Id;
             truth.RelationshipId = CaseCatalog.Relationships[random.Next(CaseCatalog.Relationships.Length - 1)].Id; // REL-07은 동기 설명 관계에서 제외
 
@@ -76,6 +79,10 @@ namespace CaseFileOmission.ContractContent
         }
 
         private static string Name(NpcRegistry npcs, string id) => id != null && npcs.Exists(id) ? npcs.Get(id).DisplayName ?? id : "누군가";
+
+        /// <summary>대표 피해자와 함께 숨진 추가 피해자 이름("A, B, C").</summary>
+        private static string AllVictimNames(ContractInstance c, NpcRegistry npcs) =>
+            string.Join(", ", new[] { c.Truth.VictimId }.Concat(c.Truth.AdditionalVictimIds).Select(id => Name(npcs, id)));
 
         private static string Room(string roomId) => HouseLayoutFactory.GetDisplayName(roomId);
 
@@ -337,6 +344,9 @@ namespace CaseFileOmission.ContractContent
                 built.Occupancy.Remove(c.Truth.VictimId);
             else if (body != null && built.Occupancy.HasRoom(body.RoomId))
                 built.Occupancy.PlaceAt(c.Truth.VictimId, body.RoomId);
+            // 함께 숨진 추가 피해자는 핵심 사건이 일어난 현장에 남는다.
+            foreach (var extra in c.Truth.AdditionalVictimIds)
+                if (built.Npcs.Exists(extra)) built.Occupancy.PlaceAt(extra, built.Timeline.SceneRoomId);
         }
 
         /// <summary>
@@ -365,7 +375,9 @@ namespace CaseFileOmission.ContractContent
             switch (police)
             {
                 case CrimeType.Murder when actual == CrimeType.Murder:
-                    known.Add($"{victim}의 사망 확인.");
+                    known.Add($"{AllVictimNames(c, npcs)}의 사망 확인.");
+                    if (c.Truth.VictimsAreCouple && c.Truth.AdditionalVictimIds.Count > 0)
+                        known.Add($"{victim}와(과) {Name(npcs, c.Truth.AdditionalVictimIds[0])}은(는) 부부·연인 관계로 확인.");
                     basis = $"{victim}의 시신과 외상이 확인되어 살인 가능성을 조사한다.";
                     break;
                 case CrimeType.Murder when actual == CrimeType.Blackmail:

@@ -48,6 +48,11 @@ namespace CaseFileOmission.Playtest
         {
             if (_path.Count == 0) return;
             var target = _path.Peek();
+            // 걷는 방향을 바라본다(추적 카메라가 캐릭터 뒤쪽에 선다).
+            var dir = target - transform.position;
+            dir.y = 0;
+            if (dir.sqrMagnitude > 0.0004f)
+                transform.rotation = Quaternion.Slerp(transform.rotation, Quaternion.LookRotation(dir), 12f * Time.deltaTime);
             transform.position = Vector3.MoveTowards(transform.position, target, Speed * Time.deltaTime);
             if ((transform.position - target).sqrMagnitude < 0.0004f) _path.Dequeue();
             if (HideOnArrive && _path.Count <= 2)
@@ -348,6 +353,8 @@ namespace CaseFileOmission.Playtest
                 piece.transform.GetChild(0).localRotation = lying ? Quaternion.Euler(0, 0, 90) : Quaternion.identity;
 
                 var target = SlotPosition(room, byRoom[room].IndexOf(pair.Key));
+                // 플레이어 말은 바닥 클릭으로 자유롭게 걷는다 — 같은 방 안에 있거나 걷는 중이면 자리 배치로 옮기지 않는다.
+                if (pair.Key == s.PlayerId && (piece.IsMoving || RoomAt(piece.transform.position) == room)) continue;
                 bool visible = pair.Key == s.PlayerId || IsObservable(s, room, target, byRoom);
                 bool wasVisible = piece.gameObject.activeSelf;
                 string fromRoom = RoomAt(piece.transform.position);
@@ -379,9 +386,129 @@ namespace CaseFileOmission.Playtest
         {
             string here = s.PlayerRoom;
             if (here == null || room != here) return false;
-            var me = SlotPosition(here, byRoom[here].IndexOf(s.PlayerId));
+            var me = _pieces.TryGetValue(s.PlayerId, out var p) ? p.transform.position : SlotPosition(here, byRoom[here].IndexOf(s.PlayerId));
             return (me - target).sqrMagnitude <= ObservationRange * ObservationRange;
         }
+
+        // ───────────────────────── 자유 이동·상호작용(탐사 조작) ─────────────────────────
+
+        public Transform PlayerPiece(GameSession s) => s != null && _pieces.TryGetValue(s.PlayerId, out var p) ? p.transform : null;
+
+        /// <summary>바닥 클릭 지점으로 플레이어를 걷게 한다. 다른 방이면 문을 거쳐 간다(방 이동 판정은 호출자가 먼저 한다).</summary>
+        public void WalkPlayerTo(GameSession s, Vector3 point, string fromRoom)
+        {
+            if (!_pieces.TryGetValue(s.PlayerId, out var piece)) return;
+            string toRoom = RoomAt(point) ?? s.PlayerRoom;
+            point.y = 0;
+            var r = TempLayoutV1.GetRoom(toRoom);
+            if (r != null)
+                point = new Vector3(Mathf.Clamp(point.x, r.MinX + 0.35f, r.MaxX - 0.35f), 0, Mathf.Clamp(point.z, r.MinZ + 0.35f, r.MaxZ - 0.35f));
+            if (fromRoom == null || fromRoom == toRoom) piece.MoveAlong(new[] { point });
+            else piece.MoveAlong(PathBetween(fromRoom, toRoom, point));
+        }
+
+        public static string RoomAtPoint(Vector3 p) => RoomAt(p);
+
+        private readonly Dictionary<string, Transform> _objectMarkers = new Dictionary<string, Transform>();
+        private string _objectsContractId;
+
+        /// <summary>
+        /// 이 의뢰의 조사 오브젝트를 방 안에 표시한다(임시 도형+이름, TEST_TEMP). 방 벽을 따라 고정 순서로 늘어놓으며
+        /// 플레이어가 상호작용 거리(1.5 m) 안으로 다가가 E로 조사한다.
+        /// </summary>
+        public void SyncObjects(GameSession s)
+        {
+            string cid = s.CurrentContract?.ContractId;
+            if (cid != _objectsContractId)
+            {
+                foreach (var t in _objectMarkers.Values) if (t != null) Destroy(t.gameObject);
+                _objectMarkers.Clear();
+                _objectsContractId = cid;
+                if (cid != null)
+                {
+                    foreach (var group in s.GetInvestigationObjects().GroupBy(o => o.RoomId))
+                    {
+                        var list = group.ToList();
+                        for (int i = 0; i < list.Count; i++)
+                            _objectMarkers[list[i].ObjectId] = MakeObjectMarker(list[i].ObjectId, list[i].Name, ObjectPosition(group.Key, i, list.Count));
+                    }
+                }
+            }
+            if (cid == null) return;
+            foreach (var pair in _objectMarkers)
+            {
+                bool done = s.InvestigatedObjectIds.Contains(pair.Key);
+                var r = pair.Value.GetComponentInChildren<Renderer>();
+                if (r != null) r.material.color = done ? new Color(0.45f, 0.45f, 0.45f) : new Color(0.95f, 0.75f, 0.25f);
+            }
+        }
+
+        private static Vector3 ObjectPosition(string roomId, int index, int count)
+        {
+            var r = TempLayoutV1.GetRoom(roomId);
+            if (r == null) return Vector3.zero;
+            // 방 둘레(벽 안쪽 0.5 m)를 일정 간격으로 나눠 놓는다. 문 앞을 피하려고 반 칸 어긋나게 시작한다.
+            float w = r.Width - 1f, d = r.Depth - 1f;
+            float perimeter = 2 * (w + d);
+            float s = perimeter * (index + 0.5f) / Mathf.Max(1, count);
+            float x0 = r.MinX + 0.5f, z0 = r.MinZ + 0.5f;
+            if (s < w) return new Vector3(x0 + s, 0, z0 + d);
+            s -= w;
+            if (s < d) return new Vector3(x0 + w, 0, z0 + d - s);
+            s -= d;
+            if (s < w) return new Vector3(x0 + w - s, 0, z0);
+            s -= w;
+            return new Vector3(x0, 0, z0 + s);
+        }
+
+        private Transform MakeObjectMarker(string objectId, string name, Vector3 position)
+        {
+            var root = new GameObject("OBJ_" + objectId).transform;
+            root.SetParent(_piecesRoot, false);
+            root.position = position;
+            var box = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            box.name = "Shape";
+            box.transform.SetParent(root, false);
+            box.transform.localScale = new Vector3(0.35f, 0.35f, 0.35f);
+            box.transform.localPosition = new Vector3(0, 0.18f, 0);
+            Destroy(box.GetComponent<Collider>());
+            box.GetComponent<Renderer>().material = MakeMaterial(new Color(0.95f, 0.75f, 0.25f));
+            var label = MakeLabel(root, name, 0.08f, new Color(1f, 0.95f, 0.75f));
+            label.transform.localPosition = new Vector3(0, 0.7f, 0);
+            label.gameObject.AddComponent<FaceCamera>();
+            return root;
+        }
+
+        public enum InteractableKind { None, Object, Npc }
+
+        /// <summary>
+        /// 플레이어가 상호작용 거리(09 TEMP_LAYOUT_V1: 1.5 m) 안에 있는 가장 가까운 대상. 같은 방의 조사 오브젝트 또는
+        /// 보이는 살아 있는 NPC만 고른다.
+        /// </summary>
+        public InteractableKind FindInteractable(GameSession s, out string id)
+        {
+            id = null;
+            if (s?.CurrentContract == null || !_pieces.TryGetValue(s.PlayerId, out var me)) return InteractableKind.None;
+            var here = RoomAt(me.transform.position);
+            float best = TempLayoutV1.InteractionRange;
+            var kind = InteractableKind.None;
+            foreach (var pair in _objectMarkers)
+            {
+                if (pair.Value == null || ContractContent.CaseCatalog.ObjectRoom(pair.Key) != here) continue;
+                float dist = Flat(pair.Value.position - me.transform.position);
+                if (dist <= best) { best = dist; id = pair.Key; kind = InteractableKind.Object; }
+            }
+            foreach (var pair in _pieces)
+            {
+                if (pair.Key == s.PlayerId || !s.Npcs.Exists(pair.Key) || !s.Npcs.Get(pair.Key).IsAlive || !pair.Value.gameObject.activeSelf) continue;
+                if (RoomAt(pair.Value.transform.position) != here) continue;
+                float dist = Flat(pair.Value.transform.position - me.transform.position);
+                if (dist <= best) { best = dist; id = pair.Key; kind = InteractableKind.Npc; }
+            }
+            return kind;
+        }
+
+        private static float Flat(Vector3 v) { v.y = 0; return v.magnitude; }
 
         private readonly List<GameObject> _exchangeMarks = new List<GameObject>();
 
@@ -405,7 +532,7 @@ namespace CaseFileOmission.Playtest
             }
             if (!any) return;
             var r = TempLayoutV1.GetRoom(s.PlayerRoom);
-            var ear = MakeLabel(transform, "[귀] 엿듣기 가능", 0.3f, new Color(0.6f, 0.9f, 1f));
+            var ear = MakeLabel(transform, "[귀] 엿듣기 가능", 0.13f, new Color(0.6f, 0.9f, 1f));
             ear.transform.position = new Vector3(r.CenterX - r.Width * 0.5f + 0.4f, 1.4f, r.CenterZ + r.Depth * 0.5f - 0.3f);
             ear.gameObject.AddComponent<FaceCamera>();
             _exchangeMarks.Add(ear.gameObject);
@@ -413,8 +540,8 @@ namespace CaseFileOmission.Playtest
 
         private void Bubble(Transform piece, string text)
         {
-            var tm = MakeLabel(piece, text, 0.22f, new Color(1f, 1f, 0.85f));
-            tm.transform.localPosition = new Vector3(0.45f, 2.05f, 0);
+            var tm = MakeLabel(piece, text, 0.1f, new Color(1f, 1f, 0.85f));
+            tm.transform.localPosition = new Vector3(0.35f, 1.65f, 0);
             tm.gameObject.AddComponent<FaceCamera>();
             _exchangeMarks.Add(tm.gameObject);
         }
@@ -529,14 +656,15 @@ namespace CaseFileOmission.Playtest
             col.height = 1.1f;
             col.radius = 0.35f;
 
-            piece.Label = MakeLabel(root, id, 0.26f, Color.white);
-            piece.Label.transform.localPosition = new Vector3(0, 1.6f, 0);
+            // 캐릭터 뒤 45도 추적 카메라(가까운 거리)에 맞춘 이름표 크기.
+            piece.Label = MakeLabel(root, id, 0.1f, Color.white);
+            piece.Label.transform.localPosition = new Vector3(0, 1.35f, 0);
             piece.Label.gameObject.AddComponent<FaceCamera>();
             return piece;
         }
 
         /// <summary>
-        /// 08 얼굴 오브젝트: 말의 머리 자리에 성격(경찰은 유형)을 나타내는 물건을 둔다. 정식 모델이 없어 임시 도형과 이름표로 대신한다(TEST_TEMP).
+        /// 08 얼굴 오브젝트: 말의 머리 자리에 성격(경찰은 유형)을 나타내는 물건을 둔다. 정식 모델이 없어 임시 도형(색은 오브젝트별 고정)으로 대신한다(TEST_TEMP).
         /// </summary>
         private void AttachFace(PieceView piece, string face)
         {
@@ -548,9 +676,7 @@ namespace CaseFileOmission.Playtest
             head.transform.localPosition = new Vector3(0, PieceTargetHeight * 0.8f + 0.12f, 0);
             head.transform.localScale = Vector3.one * 0.22f;
             head.GetComponent<Renderer>().material = MakeMaterial(FaceColor(face));
-            var tag = MakeLabel(piece.transform, face, 0.13f, new Color(1f, 0.9f, 0.6f));
-            tag.transform.localPosition = new Vector3(0, 1.25f, 0);
-            tag.gameObject.AddComponent<FaceCamera>();
+            // 오브젝트 이름은 판 위에 띄우지 않는다(좁은 방에서 인물 이름표와 겹침). 말을 클릭한 행동 아이콘 창에 표시한다.
         }
 
         private static PrimitiveType FaceShape(string face) => face switch

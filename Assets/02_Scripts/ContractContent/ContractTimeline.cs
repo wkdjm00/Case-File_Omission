@@ -88,6 +88,9 @@ namespace CaseFileOmission.ContractContent
         public string PerpetratorId;
         public string VictimId;
 
+        /// <summary>같은 핵심 사건에서 함께 숨진 추가 피해자(살인). 사건 시각에 현장에 있고 이후 일정이 없다.</summary>
+        public readonly List<string> AdditionalVictimIds = new List<string>();
+
         /// <summary>사건 직후 피해자가 현장에서 직접 행동하지 않게 되는지(살인 → 사망, 실종 → 부재).</summary>
         public bool VictimLeavesStoryAfterIncident;
 
@@ -216,6 +219,13 @@ namespace CaseFileOmission.ContractContent
             bool victimPresent = victimMustBePresent || _random.Next(2) == 0; // 비필수 유형은 균등 선택(가중치 미정)
             bool victimLeaves = crime == CrimeType.Murder || crime == CrimeType.Missing || departs;
             bool hasCoverUp = contract.Truth.CoverUp != CoverUpMethod.None;
+            // 추가 피해자는 살인 사건에서만 둔다(함께 숨짐). 다른 유형이면 무시하지 않고 실패시켜 후보를 다시 만든다.
+            var extraVictims = contract.Truth.AdditionalVictimIds.Where(registry.Exists).ToList();
+            if (extraVictims.Count > 0 && crime != CrimeType.Murder)
+            {
+                error = ContractValidationErrorCode.CONTRADICTION;
+                return null;
+            }
 
             string scene = roomIds[_random.Next(roomIds.Count)];
             int incidentSlot = _random.Next(2, slots - (hasCoverUp ? 3 : 2));
@@ -223,7 +233,7 @@ namespace CaseFileOmission.ContractContent
 
             // 발견자: 사건 이후 현장에 갈 수 있는 생존 인물(가해자 제외, 사망·실종 피해자 제외).
             var discovererCandidates = cast
-                .Where(n => n.NpcId != perpId && !(n.NpcId == victimId && victimLeaves))
+                .Where(n => n.NpcId != perpId && !(n.NpcId == victimId && victimLeaves) && !extraVictims.Contains(n.NpcId))
                 .ToList();
             if (discovererCandidates.Count == 0)
             {
@@ -244,6 +254,8 @@ namespace CaseFileOmission.ContractContent
             required[perpId][incidentSlot] = scene;
             if (hasCoverUp) required[perpId][coverUpSlot] = scene;
             if (victimPresent) required[victimId][incidentSlot] = scene;
+            foreach (var extra in extraVictims)
+                required[extra][incidentSlot] = scene;
             foreach (var witness in cast.Where(n => n.ActualRole == NpcActualRole.Witness))
                 required[witness.NpcId][incidentSlot] = scene;
             required[discoverer.NpcId][discoverySlot] = scene;
@@ -277,11 +289,14 @@ namespace CaseFileOmission.ContractContent
                 VictimId = victimId,
                 VictimLeavesStoryAfterIncident = victimLeaves
             };
+            timeline.AdditionalVictimIds.AddRange(extraVictims);
 
             var walks = new Dictionary<string, string[]>();
             foreach (var npc in cast)
             {
-                int lastSlot = npc.NpcId == victimId && victimLeaves ? (departs ? departureSlot : delayed ? deathSlot : incidentSlot) : slots - 1;
+                int lastSlot = npc.NpcId == victimId && victimLeaves ? (departs ? departureSlot : delayed ? deathSlot : incidentSlot)
+                    : extraVictims.Contains(npc.NpcId) ? incidentSlot
+                    : slots - 1;
                 var walk = RandomWalk(roomIds, rooms, distance, lastSlot, required[npc.NpcId], forbidden[npc.NpcId]);
                 if (walk == null)
                     return null;
@@ -294,6 +309,7 @@ namespace CaseFileOmission.ContractContent
             var core = AddEvent(timeline, TimelineEventKind.CoreIncident, M(incidentSlot), M(incidentSlot + 1), scene);
             core.ParticipantIds.Add(perpId);
             if (victimPresent) core.ParticipantIds.Add(victimId);
+            core.ParticipantIds.AddRange(extraVictims);
 
             TimelineEvent lastPerpEvent = core;
             if (hasCoverUp)
@@ -527,6 +543,14 @@ namespace CaseFileOmission.ContractContent
                 && !core.ParticipantIds.Contains(timeline.VictimId))
                 Add(ContractValidationErrorCode.CONTRADICTION);
 
+            // 함께 숨진 추가 피해자는 핵심 사건 참여자이고 사건 이후 일정이 없다.
+            foreach (var extra in timeline.AdditionalVictimIds)
+            {
+                if (!core.ParticipantIds.Contains(extra)
+                    || (timeline.Schedules.TryGetValue(extra, out var extraSchedule) && extraSchedule.Entries.Any(en => en.EndMinute > core.EndMinute)))
+                    Add(ContractValidationErrorCode.CONTRADICTION);
+            }
+
             // 사망·실종 피해자는 사건 이후 직접 행동하지 않는다.
             int victimLastMinute = timeline.VictimDepartureMinute >= 0 ? timeline.VictimDepartureMinute + timeline.SlotMinutes : core.EndMinute;
             if (timeline.VictimLeavesStoryAfterIncident
@@ -627,7 +651,11 @@ namespace CaseFileOmission.ContractContent
             }
 
             if (timeline.CrimeType == CrimeType.Murder)
+            {
                 registry.Get(timeline.VictimId).MarkDeceased();
+                foreach (var extra in timeline.AdditionalVictimIds)
+                    registry.Get(extra).MarkDeceased();
+            }
 
             int start = timeline.InvestigationStartMinute;
             foreach (var pair in timeline.Schedules)
@@ -635,7 +663,7 @@ namespace CaseFileOmission.ContractContent
                 string room = pair.Value.GetScheduledRoom(Math.Min(start, timeline.DayEndMinute - 1));
                 if (room != null)
                     occupancy.PlaceAt(pair.Key, room);
-                else if (pair.Key == timeline.VictimId && timeline.CrimeType == CrimeType.Murder)
+                else if ((pair.Key == timeline.VictimId || timeline.AdditionalVictimIds.Contains(pair.Key)) && timeline.CrimeType == CrimeType.Murder)
                     occupancy.PlaceAt(pair.Key, timeline.SceneRoomId); // 시신은 현장에 남는다.
             }
         }

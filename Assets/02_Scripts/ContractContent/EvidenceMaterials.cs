@@ -292,7 +292,7 @@ namespace CaseFileOmission.ContractContent
         {
             if (!registry.Exists(npcId) || !registry.Get(npcId).IsAlive)
                 return false;
-            return !(npcId == timeline.VictimId && timeline.VictimLeavesStoryAfterIncident);
+            return !(npcId == timeline.VictimId && timeline.VictimLeavesStoryAfterIncident) && !timeline.AdditionalVictimIds.Contains(npcId);
         }
 
         /// <summary>

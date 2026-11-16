@@ -20,6 +20,12 @@ namespace CaseFileOmission.MainCase
         /// </summary>
         public const string FamilyNotificationRecord = "가족 통지·사고사 위장 관련 기록";
 
+        /// <summary>03 개인적 진실 하위 문서(2026-11-13): 프롤로그 자료 묶음의 기본 보고서. 단계 필수 단서가 아닌 정보용 문서.</summary>
+        public const string BloodiedRebelReport = "피 묻은 익명 반란 세력 내부 보고서";
+        public const string FamilyDeathReport = "형제자매 가족 사망·사고 처리 보고서";
+        public const string BloodiedRebelReportId = "EVIDENCE_BLOODIED_REBEL_REPORT";
+        public const string FamilyDeathReportId = "EVIDENCE_FAMILY_DEATH_REPORT";
+
         public const string GovernmentDepartmentContactLog = "정부 부서 연락 기록";
         public const string SubjectManagementTable = "실험 대상자 관리표";
         public const string ResultReportRecording = "실험 결과 보고 녹음";
@@ -40,7 +46,14 @@ namespace CaseFileOmission.MainCase
         public const string ExperimentContinuationDecisionRecord = "실험 지속 결정 기록";
         public const string CollaboratorRewardDissenterPenaltyRecord = "협력자 보상·반대자 불이익 기록";
 
+        /// <summary>참가자에게 배포된 공식 안내문(특조-84-1017-04). 실험의 진실 필수 단서이자 최종 보고서 0·1번 빈칸의 정답 단서명.</summary>
         public const string ParticipantOperatingRulesNotice = "참가자 운영 규칙 안내문";
+
+        /// <summary>
+        /// 운영 담당자가 보관한 내부 상세 규정(운영-규칙-84-01, 보조 조사 단서). 화면 문서명은 같은 "참가자 운영 규칙 안내문"이지만
+        /// 배포본과 다른 문서이므로 진행 추적 키를 따로 둔다. 단계 필수 단서가 아니다(2026-11-16 사용자 지정 게임 적용 기준).
+        /// </summary>
+        public const string ParticipantOperatingRulesInternal = "참가자 운영 규칙 안내문#운영-규칙-84-01";
         public const string StudentInfoAcquisitionMemo = "학생 정보 확보 메모";
         public const string SurvivorHandoverRecord = "생존자 인계 기록";
 

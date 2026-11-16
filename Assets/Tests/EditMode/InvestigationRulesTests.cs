@@ -245,7 +245,11 @@ namespace CaseFileOmission.Tests
             bool sawDifferent = false;
             for (int seed = 1; seed <= 60; seed++)
             {
-                var s = Start(seed);
+                // 메인 사건 2단계에서는 단서 생성 제약(살인 고정 등)이 붙으므로, 제약 없는 일반 의뢰(1단계)로 조합 분포를 본다.
+                var s = new GameSession(new GameSessionConfig { Random = new Random(seed) });
+                s.StartNewGame();
+                Assert.IsNotNull(s.OfferContract());
+                Assert.IsTrue(s.AcceptContract().Success);
                 var c = s.CurrentContract;
                 Assert.IsTrue(c.RepresentativeCrimeType.HasValue);
                 Assert.IsNotEmpty(c.PoliceKnownFacts, "경찰 초기 정보");

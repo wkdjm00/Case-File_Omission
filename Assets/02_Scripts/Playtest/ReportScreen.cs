@@ -123,9 +123,11 @@ namespace CaseFileOmission.Playtest
             var s = S;
             var body = Ui.Window(_g.WindowLayer, "물리적 증거·기록 조작", () => { _g.CloseWindow(); _g.RefreshHud(); }, out _, 0.25f, 0.15f, 0.75f, 0.85f);
             var list = Ui.Scroll(Ui.Stretch(Ui.Rect(body, "List")));
-            Ui.Line(list, "기본 성공 70%. 성공·실패 모두 발각되지 않고 흔적도 없다. 시도 1시간.", 18, Ui.DimTextColor);
+            Ui.Line(list, "보유한 물리적 증거만 대상. 성공 70% 고정. 성공·실패 모두 발각되지 않는다. 시도 1시간.", 18, Ui.DimTextColor);
             var held = s.Clues.GetHeldByPlayerClueIds(s.CurrentContract.ContractId);
-            foreach (var id in held)
+            var physical = held.Where(id => s.Clues.GetDefinition(id).Format == ClueFormat.PhysicalObject).ToList();
+            if (physical.Count == 0) Ui.Line(list, "(보유한 물리적 증거가 없다)", 18, Ui.DimTextColor);
+            foreach (var id in physical)
             {
                 string cid = id;
                 Ui.Line(list, PlaytestTexts.MaterialTitle(s, cid), 19);

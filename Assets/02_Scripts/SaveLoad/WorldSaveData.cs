@@ -7,6 +7,7 @@ using CaseFileOmission.Police;
 using CaseFileOmission.MainCase;
 using CaseFileOmission.Meeting;
 using CaseFileOmission.NPC;
+using CaseFileOmission.Organization;
 using CaseFileOmission.Reports;
 
 namespace CaseFileOmission.SaveLoad
@@ -36,6 +37,9 @@ namespace CaseFileOmission.SaveLoad
         public long DiscoveredAtTicks;
         public ClueWorldState WorldState;
         public string[] ConfirmedByPoliceIds;
+        public ClueAccessState Access;
+        public ConcealmentResult Concealment;
+        public bool ConcealmentDetected;
     }
 
     [Serializable]
@@ -170,6 +174,25 @@ namespace CaseFileOmission.SaveLoad
         public bool IsSubmitted;
         public ReportSectionDto[] Sections;
         public ReportSlotDto[] Slots;
+    }
+
+    [Serializable]
+    public sealed class StageUnlockDto
+    {
+        public string Stage;
+        public int CompletedAt;
+    }
+
+    [Serializable]
+    public sealed class OrgReportDto
+    {
+        public string Id;
+        public OrgReportRollStatus RollStatus;
+        public OrgReportDeliveryStatus DeliveryStatus;
+        public string EligibilityBand;
+        public string FirstEligibleContractId;
+        public int DeliveredWorldMinute = -1;
+        public bool Read;
     }
 
     [Serializable]
@@ -308,6 +331,12 @@ namespace CaseFileOmission.SaveLoad
         public bool VictimDeparted;
         public bool BodyHidden;
         public bool DelayedDeath;
+        public string[] AdditionalVictimIds;
+        public bool VictimsAreCouple;
+        public string PlannedMainCaseClue;
+        public string PlannedClueObjectId;
+        public string DocumentHolderNpcId;
+        public string DocumentHolderTag;
 
         public string ReportedSummary;
         public string InitialExplanation;
@@ -331,6 +360,7 @@ namespace CaseFileOmission.SaveLoad
     public sealed class CampaignSaveData
     {
         public PursuitStage PursuitStage;
+        public string PursuitTriggerId;
         public bool HasFirearm;
         public int FirearmLoaded;
         public int FirearmReserve;
@@ -339,6 +369,12 @@ namespace CaseFileOmission.SaveLoad
         public OrganizationConditionType PreviousConditionType;
         public float HandlerStartingSuspicion;
         public string NextHandlerPoliceId;
+        public bool PendingHandlerDeathBonus;
+        public int CompletedContractCount;
+        public StageUnlockDto[] StageUnlocks;
+        public string[] GeneratedMainDocuments;
+        public bool PendingOrgDeliveryCall;
+        public OrgReportDto[] OrgReports;
         public string SceneRoomId;
         public int NpcMinute;
         public int BlockStartMinute;

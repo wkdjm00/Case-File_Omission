@@ -57,6 +57,18 @@ namespace CaseFileOmission.Contracts
         /// <summary>고정 테스트 사건 ID(TEST_TEMP_CASE_001 등). 생성 의뢰면 null. Editor/Development 전용.</summary>
         public string FixtureId;
 
+        /// <summary>
+        /// 03 2026-11-12 "단서 우선 배치 → 의뢰 생성 제약": 이 의뢰를 만들 때 먼저 정한 메인 사건 단서 이름. 제약 없이 만든 의뢰면 null.
+        /// </summary>
+        public string PlannedMainCaseClue;
+
+        /// <summary>배치한 메인 사건 문서를 둔 조사 오브젝트(방ID:오브젝트명). 문서를 특정 오브젝트에 두지 않으면 null.</summary>
+        public string PlannedClueObjectId;
+
+        /// <summary>문서를 보유·보관한 기존 의뢰 인물과 그 역할 태그(03 2026-11-12 권력의 진실 자료 보유 경로). 실제 역할·진실과 별개다.</summary>
+        public string DocumentHolderNpcId;
+        public string DocumentHolderTag;
+
         /// <summary>고정 사건 전용: 플레이어 시작 방(null이면 사건 현장).</summary>
         public string PlayerStartRoomId;
 

@@ -37,6 +37,23 @@ namespace CaseFileOmission.Evidence
     /// 한 번 발견한 단서는 보고서(레코드)에서 절대 사라지지 않지만, 누가 실제로 들고 있는지는 바뀔 수 있다.
     /// 장소·NPC 줍기 로직은 이후 단계(공간/NPC 모듈)에서 구현하며, 여기서는 상태값만 정의한다.
     /// </summary>
+    /// <summary>
+    /// 2026-11-16 확정 은폐: 은폐는 증거를 세계에서 없애지 않고, 플레이어가 지정한 단서 하나의 접근 가능 상태만 바꾼다.
+    /// </summary>
+    public enum ClueAccessState
+    {
+        Accessible,
+        Concealed
+    }
+
+    /// <summary>마지막 은폐 시도 결과(성공·실패는 발각 여부와 별도 상태).</summary>
+    public enum ConcealmentResult
+    {
+        NotAttempted,
+        Succeeded,
+        Failed
+    }
+
     public enum ClueWorldState
     {
         HeldByPlayer,

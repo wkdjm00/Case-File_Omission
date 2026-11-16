@@ -301,6 +301,52 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void Concealment_RoundTrip_KeepsPerClueAccessResultAndDetection()
+        {
+            var source = new World();
+            source.Clues.Discover(Clue("x"));
+            source.Clues.Discover(Clue("y"));
+            source.Clues.GetRecord("x").ApplyConcealment(true, true);
+            source.Clues.GetRecord("y").ApplyConcealment(false, false);
+
+            var target = RoundTrip(source);
+
+            Assert.AreEqual(ClueAccessState.Concealed, target.Clues.GetRecord("x").Access);
+            Assert.AreEqual(ConcealmentResult.Succeeded, target.Clues.GetRecord("x").Concealment);
+            Assert.IsTrue(target.Clues.GetRecord("x").ConcealmentDetected);
+            Assert.AreEqual(ClueAccessState.Accessible, target.Clues.GetRecord("y").Access);
+            Assert.AreEqual(ConcealmentResult.Failed, target.Clues.GetRecord("y").Concealment);
+            Assert.IsFalse(target.Clues.GetRecord("y").ConcealmentDetected);
+        }
+
+        [Test]
+        public void Campaign_PublicRolesAndPendingHandlerBonus_RoundTrip_SkippingUnknownNpc()
+        {
+            var source = new World();
+            source.Npcs.Add(new NpcState("npc-1", ContractId, NpcActualRole.Victim, NpcPersonality.Timid));
+            var sourceCampaign = new CampaignProgress { PendingHandlerDeathBonus = true };
+            sourceCampaign.PublicRoles["npc-1"] = "Victim";
+            sourceCampaign.PublicRoles["ghost"] = "Witness";
+            var sourceTargets = source.Targets;
+            sourceTargets.Campaign = sourceCampaign;
+
+            var data = new SaveGameData { World = WorldStateSaveService.Capture(sourceTargets) };
+            var loaded = SaveGameService.FromJson(SaveGameService.ToJson(data));
+
+            var target = new World();
+            target.Npcs.Add(new NpcState("npc-1", ContractId, NpcActualRole.Victim, NpcPersonality.Timid));
+            var targetTargets = target.Targets;
+            targetTargets.Campaign = new CampaignProgress();
+            var logger = new GameLogger();
+            WorldStateSaveService.Restore(loaded.World, targetTargets, logger);
+
+            Assert.IsTrue(targetTargets.Campaign.PendingHandlerDeathBonus);
+            Assert.AreEqual("Victim", targetTargets.Campaign.PublicRoles["npc-1"]);
+            Assert.IsFalse(targetTargets.Campaign.PublicRoles.ContainsKey("ghost"), "없는 NPC의 공개 역할은 건너뛴다");
+            Assert.IsTrue(logger.Entries.Any(e => e.ErrorCode == "SAVE_UNKNOWN_NPC_ID"));
+        }
+
+        [Test]
         public void PositionsAndGlobalEvents_RoundTrip()
         {
             var source = new World();

@@ -25,7 +25,10 @@ namespace CaseFileOmission.ContractContent
             _random = random ?? new Random();
         }
 
-        public void CreateCast(ContractInstance contract, NpcRegistry npcRegistry)
+        /// <summary>04 2026-11-12: 사건 참여 NPC 최대 6명.</summary>
+        public const int MaxCastSize = 6;
+
+        public void CreateCast(ContractInstance contract, NpcRegistry npcRegistry, ContractConstraints constraints = null)
         {
             if (contract == null) throw new ArgumentNullException(nameof(contract));
             if (npcRegistry == null) throw new ArgumentNullException(nameof(npcRegistry));
@@ -38,18 +41,34 @@ namespace CaseFileOmission.ContractContent
             contract.Truth.PerpetratorId = perpetratorId;
             // 진실 세부(방법·도구·동기·관계·세부 종류·날짜)는 후보마다 한 번만 정하고 검증 재시도 중에는 바꾸지 않는다.
             if (contract.Truth.MethodId == null)
-                CaseDetailGenerator.AssignTruthDetails(contract, _random);
+                CaseDetailGenerator.AssignTruthDetails(contract, _random, constraints);
+            // 문서가 사건 당시 이미 보관되어 있어야 하므로 사건 발생일을 문서 존재 시점 이후로 맞춘다(03 2026-11-12).
+            constraints?.ApplyIncidentDate(contract, _random);
 
+            var victim = new NpcState(victimId, contract.ContractId, NpcActualRole.Victim, PickPersonality());
+            var perpetrator = new NpcState(perpetratorId, contract.ContractId, NpcActualRole.Perpetrator,
+                constraints?.PerpetratorPersonality ?? PickPersonality());
             var cast = new List<NpcState>
             {
-                new NpcState(victimId, contract.ContractId, NpcActualRole.Victim, PickPersonality()),
-                new NpcState(perpetratorId, contract.ContractId, NpcActualRole.Perpetrator, PickPersonality()),
+                victim,
+                perpetrator,
                 new NpcState(witnessId, contract.ContractId, NpcActualRole.Witness, PickPersonality())
             };
 
+            // 03 메인 단서 제약: 같은 핵심 사건에서 함께 숨진 추가 피해자(피해자 3명 이상, 부부·연인 두 사람 사망).
+            contract.Truth.AdditionalVictimIds.Clear();
+            int extraVictims = constraints == null ? 0 : Math.Max(constraints.VictimCount, constraints.CoupleVictims ? 2 : 1) - 1;
+            for (int i = 0; i < extraVictims; i++)
+            {
+                string id = ContractConstraints.AdditionalVictimIdFor(contract.ContractId, i);
+                contract.Truth.AdditionalVictimIds.Add(id);
+                cast.Add(new NpcState(id, contract.ContractId, NpcActualRole.Victim, PickPersonality()));
+            }
+            contract.Truth.VictimsAreCouple = constraints != null && constraints.CoupleVictims && extraVictims > 0;
+
             // 04 2026-11-12: 사건 참여 NPC 2~6명. 사건 관계자는 관계·동기·정보 접근을 설명할 때만 둔다(인원 채우기 금지) —
             // 피해자와 관계(REL)가 있는 인물로만 만들고, 그 관계를 진술·문서 자료의 근거로 쓴다. 0~2명(TEST_TEMP 범위).
-            int related = _random.Next(3);
+            int related = Math.Min(_random.Next(3), MaxCastSize - cast.Count);
             if (related >= 1) cast.Add(new NpcState(RelatedIdFor(contract.ContractId, 'a'), contract.ContractId, NpcActualRole.CaseRelatedA, PickPersonality()));
             if (related >= 2) cast.Add(new NpcState(RelatedIdFor(contract.ContractId, 'b'), contract.ContractId, NpcActualRole.CaseRelatedB, PickPersonality()));
 
@@ -59,6 +78,16 @@ namespace CaseFileOmission.ContractContent
                 cast[i].DisplayName = names[i % names.Count];
                 cast[i].Occupation = CaseCatalog.Occupations[_random.Next(CaseCatalog.Occupations.Length)];
                 npcRegistry.Add(cast[i]);
+            }
+            if (constraints?.VictimOccupation != null)
+                victim.Occupation = constraints.VictimOccupation;
+            if (constraints != null)
+                constraints.AssignDocumentHolder(contract, npcRegistry, _random);
+            else
+            {
+                contract.PlannedClueObjectId = null;
+                contract.DocumentHolderNpcId = null;
+                contract.DocumentHolderTag = null;
             }
         }
 
@@ -131,7 +160,8 @@ namespace CaseFileOmission.ContractContent
         public GeneratedContract TryGenerate(
             Func<string> contractIdFactory,
             out ContractGenerationResult result,
-            OrganizationConditionType previousConditionType = OrganizationConditionType.None)
+            OrganizationConditionType previousConditionType = OrganizationConditionType.None,
+            ContractConstraints constraints = null)
         {
             GeneratedContract built = null;
             var policy = new ContractRetryPolicy(_generator, new ContractValidator(),
@@ -139,7 +169,7 @@ namespace CaseFileOmission.ContractContent
 
             result = policy.TryGenerate(contractIdFactory, candidate =>
             {
-                var validation = BuildAndValidate(candidate, out var attempt);
+                var validation = BuildAndValidate(candidate, constraints, out var attempt);
                 built = validation.IsValid ? attempt : null;
                 return validation;
             }, previousConditionType);
@@ -151,7 +181,7 @@ namespace CaseFileOmission.ContractContent
             return built;
         }
 
-        private ContractValidationResult BuildAndValidate(ContractInstance candidate, out GeneratedContract built)
+        private ContractValidationResult BuildAndValidate(ContractInstance candidate, ContractConstraints constraints, out GeneratedContract built)
         {
             var result = new ContractValidationResult();
             void Merge(IEnumerable<ContractValidationErrorCode> codes)
@@ -171,7 +201,9 @@ namespace CaseFileOmission.ContractContent
             // 이전 시도의 사건 ID 기록을 지운다(진실의 인물·관계·동기는 그대로).
             candidate.Truth.TimelineEvents.Clear();
 
-            new ContractContentGenerator(_random).CreateCast(candidate, built.Npcs);
+            // 03 2026-11-12: 먼저 정한 메인 사건 단서의 사건 조건을 후보에 강제한다(같은 후보의 재시도에서도 결과가 같다).
+            constraints?.ApplyToCandidate(candidate);
+            new ContractContentGenerator(_random).CreateCast(candidate, built.Npcs, constraints);
 
             var timelineResult = new ContractTimelineGenerator(_random,
                 new TimelineGenerationConfig { MaxRetriesPerElement = _config.MaxRetriesPerElement })
@@ -212,6 +244,8 @@ namespace CaseFileOmission.ContractContent
             Merge(new EvidenceMaterialValidator().Validate(built.Materials, timeline, built.Npcs, built.Rooms).Errors);
             Merge(new ContractTimelineValidator().ValidateNpcKnowledge(timeline, built.Npcs).Errors);
             Merge(ValidateOrganizationTarget(built));
+            if (constraints != null && !constraints.IsSatisfiedBy(candidate, built.Npcs))
+                Merge(new[] { ContractValidationErrorCode.CONTRACT_INVALID });
 
             return result;
         }

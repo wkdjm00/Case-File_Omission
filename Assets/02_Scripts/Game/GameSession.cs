@@ -72,6 +72,7 @@ namespace CaseFileOmission.Game
         public const float ProvisionalSuspiciousThreshold = 35f;
 
         private readonly Random _random;
+        private readonly MainCaseClueRuleConfig _mainCaseRules;
         private readonly IAiContentProvider _aiProvider;
         private readonly ContractPipeline _pipeline;
         private readonly FirearmResolver _firearmResolver;
@@ -90,6 +91,9 @@ namespace CaseFileOmission.Game
         public GameLogger Logger { get; } = new GameLogger();
         public OrganizationState Organization { get; } = new OrganizationState();
         public OrganizationSupportClueService OrganizationSupport { get; } = new OrganizationSupportClueService();
+
+        /// <summary>조직 보조 자료 20개(ORG_SUPPLEMENTARY_REPORT) 판정·전달 상태.</summary>
+        public OrgSupplementarySupportService OrgSupplementary { get; private set; }
         public PoliceSuspicionService PoliceSuspicion { get; } = new PoliceSuspicionService();
         public PoliceLifeStateService PoliceLife { get; } = new PoliceLifeStateService();
         public PolicePursuitController Pursuit { get; }
@@ -174,7 +178,9 @@ namespace CaseFileOmission.Game
             _firearmResolver = new FirearmResolver(_random);
             _persuasion = new NpcPersuasionService(_random);
             _confirmation = new ClueConfirmationRequestService(_random);
-            _mainCaseClues = new MainCaseClueAcquisitionService(config.MainCaseRules, _random);
+            _mainCaseRules = config.MainCaseRules ?? new MainCaseClueRuleConfig();
+            _mainCaseClues = new MainCaseClueAcquisitionService(_mainCaseRules, _random);
+            OrgSupplementary = new OrgSupplementarySupportService(_random);
 
             Pursuit = new PolicePursuitController(PoliceSuspicion, State.EventLog);
             Endings = new EndingExecutor(new GameEndEvaluator(PoliceSuspicion, Organization));
@@ -201,6 +207,12 @@ namespace CaseFileOmission.Game
         public void CompletePrologue()
         {
             GrantMainCaseDocument("maincase:NieceDeathReport", MainCaseClueNames.NieceDeathReport);
+            // 03 2026-11-13: 프롤로그 자료 묶음의 기본 보고서 2종(고정 출처 ID, 별도 획득 판정 없음).
+            GrantMainCaseDocument(MainCaseClueNames.BloodiedRebelReportId, MainCaseClueNames.BloodiedRebelReport);
+            GrantMainCaseDocument(MainCaseClueNames.FamilyDeathReportId, MainCaseClueNames.FamilyDeathReport);
+            // TEST_TEMP: 「가족 통지 및 사고 처리 기록」은 획득 시점·장소·경로가 노션에 아직 없다(03 2026-11-11).
+            // 1단계 필수 단서라 지급하지 않으면 메인 사건이 진행되지 않으므로, 경로가 정해질 때까지 프롤로그에서 함께 지급한다.
+            GrantMainCaseDocument("maincase:FamilyNotificationRecord", MainCaseClueNames.FamilyNotificationRecord);
             AdvanceMainCaseStages();
         }
 
@@ -220,10 +232,91 @@ namespace CaseFileOmission.Game
 
             if (PendingOffer == null)
             {
-                PendingOffer = _pipeline.TryGenerate(() => $"contract-{++Campaign.ContractCounter}", out var result, Campaign.PreviousConditionType);
+                var constraints = PlanMainCaseConstraints();
+                PendingOffer = _pipeline.TryGenerate(() => $"contract-{++Campaign.ContractCounter}", out var result, Campaign.PreviousConditionType, constraints);
+                // 제약을 지키는 의뢰를 끝내 만들지 못하면 제약 없이 일반 의뢰를 제안한다(다음 의뢰에서 다시 배치를 시도한다).
+                if (PendingOffer == null && constraints != null)
+                {
+                    Logger.LogError("MAINCASE_CONSTRAINT_UNMET", nameof(GameSession), State.CurrentPhase,
+                        $"메인 사건 단서 '{constraints.PlannedClueName}'의 생성 제약을 지키는 의뢰를 만들지 못해 일반 의뢰로 제안합니다.", recoverable: true);
+                    PendingOffer = _pipeline.TryGenerate(() => $"contract-{++Campaign.ContractCounter}", out result, Campaign.PreviousConditionType);
+                }
                 LastGenerationResult = result;
             }
             return PendingOffer;
+        }
+
+        /// <summary>
+        /// 03 2026-11-12 "단서 우선 배치 → 의뢰 생성 제약": 지금 진실 단계에서 아직 얻지 못한, 사건 조건이 있는 메인 사건 단서를 하나 골라
+        /// 그 조건을 의뢰 생성의 필수 제약으로 만든다. 관련 의뢰가 우연히 생성되기를 기다리지 않는다.
+        /// - 정부 부서 연락 기록: 피해자가 3명 이상인 사건
+        /// - 실험 결과 보고 녹음·참가자 명단 전달 확인서: 피해자 직업 비서 + 칼(TOOL-01)에 의한 사망 + 가해자 '의심이 많은'(세 조건을 모두 충족)
+        /// - 고위 관계자 서신: 가해자 '욕심이 많은'(다른 자료 조건과 합치지 않고 별도 의뢰)
+        /// - 연인에게 남긴 번호 쪽지: 부부 또는 연인 관계인 두 피해자가 모두 사망
+        /// 관리표(쪽지 뒤 의뢰 2건·25%·조직 전달)와 대상자 번호 파일(컴퓨터·비밀번호)은 사건 조건 단서가 아니라 여기서 배치하지 않는다.
+        /// 고르는 순서는 원문에 없어 단서표 순서를 쓴다(임시).
+        /// </summary>
+        public ContractConstraints PlanMainCaseConstraints()
+        {
+            if (MainCase.CurrentStage == MainCaseTruthStage.PowerTruth) return PlanPowerTruthConstraints();
+            if (MainCase.CurrentStage != MainCaseTruthStage.SystemicTruth) return null;
+            var rules = _mainCaseRules;
+            bool Missing(string name) => !MainCase.HasAcquired(name);
+
+            if (Missing(MainCaseClueNames.GovernmentDepartmentContactLog))
+                return new ContractConstraints { PlannedClueName = MainCaseClueNames.GovernmentDepartmentContactLog, RequireMurder = true, VictimCount = rules.MinimumVictimCountForContactLog };
+            if (Missing(MainCaseClueNames.ResultReportRecording) || Missing(MainCaseClueNames.ParticipantRosterDeliveryConfirmation))
+                return new ContractConstraints
+                {
+                    PlannedClueName = Missing(MainCaseClueNames.ResultReportRecording) ? MainCaseClueNames.ResultReportRecording : MainCaseClueNames.ParticipantRosterDeliveryConfirmation,
+                    RequireMurder = true,
+                    VictimOccupation = rules.SecretaryOccupation,
+                    ToolId = rules.KnifeToolId,
+                    PerpetratorPersonality = rules.SuspiciousTrait
+                };
+            if (Missing(MainCaseClueNames.SeniorOfficialLetter))
+                return new ContractConstraints { PlannedClueName = MainCaseClueNames.SeniorOfficialLetter, PerpetratorPersonality = rules.DesireTrait };
+            if (Missing(MainCaseClueNames.NumberNoteLeftForLover))
+                return new ContractConstraints { PlannedClueName = MainCaseClueNames.NumberNoteLeftForLover, RequireMurder = true, CoupleVictims = true };
+            // 반복 실험 번호 목록: "해당 피해자의 방 서랍 안쪽 오래된 봉투". 사건 조건은 없고 보관 위치만 확정이다.
+            // 주택 8공간에 피해자 개인 방·서랍 오브젝트가 따로 없어, 봉투가 있는 서재의 '봉투'에 둔다(임시).
+            if (Missing(MainCaseClueNames.RepeatedExperimentNumberList))
+                return new ContractConstraints
+                {
+                    PlannedClueName = MainCaseClueNames.RepeatedExperimentNumberList,
+                    HolderIsVictim = true,
+                    DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "봉투")
+                };
+            return null;
+        }
+
+        /// <summary>
+        /// 03 2026-11-12 「권력의 진실 자료 8개 획득 조건」. 단계가 열리면 아직 없는 자료 하나를 골라 그 자료의 보유 경로(기존 NPC 역할 태그),
+        /// 문서 존재 시점(사건 발생일은 그 이후), 보관 오브젝트를 생성 제약으로 넘긴다. 순차 해금이 아니며 관리 번호 순서로 고르는 것은 임시다.
+        /// 자료가 요구하지 않는 피해자 직업·범행 방법·도구·가해자 성격·사건 유형은 제약하지 않는다. 조직이 문서를 직접 전달하지 않고 현장 조사로 발견한다.
+        /// 보관 오브젝트는 원문 보관 설명에 맞는 기존 조사 오브젝트를 골랐다: 개인 서신은 침실 '편지', 계약 문서는 서재 '계약서',
+        /// 회계 장부류는 서재 '장부', 서류함·내부 서류는 서재 '서류 더미'(주택 오브젝트 목록에 '서류함'이 따로 없음).
+        /// </summary>
+        private ContractConstraints PlanPowerTruthConstraints()
+        {
+            string Study(string obj) => CaseCatalog.ObjectId(HouseLayoutFactory.Study, obj);
+            var plans = new[]
+            {
+                (MainCaseClueNames.ExperimentCompositionDealProposal, "외부 제안자와 거래·연락 관계인 특별사업 협의 담당자", "1984-10-21", Study("계약서")),
+                (MainCaseClueNames.ProductPurchaseWishList, "민간 거래 대행인(개인 서류함 보유·관리)", "1984-10-29", Study("서류 더미")),
+                (MainCaseClueNames.ProductSalesSettlement, "특별사업 상품 판매·회계 자료 접근·보관자", "1984-11-01", Study("장부")),
+                (MainCaseClueNames.ViewingTicketRevenueSettlement, "관람권·특별 접근권 발급·판매·정산 자료 접근·보관자", "1984-11-01", Study("장부")),
+                (MainCaseClueNames.GovernmentSupportRewardLetter, "정부 지지에 협조하고 개인적 혜택을 받은 관계자", "1984-11-04", CaseCatalog.ObjectId(HouseLayoutFactory.Bedroom, "편지")),
+                (MainCaseClueNames.UpperClassHospitalityRecord, "상류층 접대·후원 기록 보관·열람자", "1984-11-11", Study("장부")),
+                (MainCaseClueNames.ExperimentContinuationDecisionRecord, "제한 열람 운영 검토 기록에 접근하는 내부 관계자", "1984-11-14", Study("서류 더미")),
+                (MainCaseClueNames.CollaboratorRewardDissenterPenaltyRecord, "협조 여부에 따른 행정 조치 기록 관리·열람 내부 관계자", "1984-11-15", Study("서류 더미")),
+            };
+            foreach (var (name, tag, date, obj) in plans)
+            {
+                if (MainCase.HasAcquired(name)) continue;
+                return new ContractConstraints { PlannedClueName = name, DocumentHolderTag = tag, EarliestIncidentDate = date, DocumentObjectId = obj };
+            }
+            return null;
         }
 
         /// <summary>
@@ -257,6 +350,13 @@ namespace CaseFileOmission.Game
             Campaign.PublicRoles.Clear();
             InvestigatedObjectIds.Clear();
             RecentExchanges = new List<OverheardExchange>();
+            if (Campaign.PendingHandlerDeathBonus)
+            {
+                // 이전 담당 경찰 사망의 추가 +10(기본 +5와 합쳐 +15)은 새로 배정된 담당 경찰에게 한 번만 적용한다.
+                if (State.EventLog.TryRecord(new GameEvent($"handler-death-bonus:{contract.ContractId}", GameEventType.Custom, contract.ContractId, handler)))
+                    PoliceSuspicion.ApplyBatch(handler, PlayerId, new[] { 10f });
+                Campaign.PendingHandlerDeathBonus = false;
+            }
             Campaign.HandlerStartingSuspicion = PoliceSuspicion.GetSuspicion(handler, PlayerId);
             Campaign.MeetingsEndedInContract = 0;
 
@@ -297,6 +397,8 @@ namespace CaseFileOmission.Game
 
             PlaceRebelMemoIfNeeded(offer);
             RevealVictimFromPoliceSnapshot(contract);
+            if (contract.PlannedMainCaseClue != null)
+                Campaign.GeneratedMainDocuments.Add(contract.PlannedMainCaseClue);
 
             var result = GameActionResult.Ok();
             CheckEndings();
@@ -329,8 +431,16 @@ namespace CaseFileOmission.Game
         // ───────────────────────── 조사 ─────────────────────────
 
         /// <summary>이 의뢰의 조사 오브젝트(방별 후보 중 이번 사건에서 조사 가능한 것). 의뢰 데이터에서 다시 만들 수 있다.</summary>
-        public IReadOnlyList<InvestigationObject> GetInvestigationObjects() =>
-            CurrentContract == null ? new List<InvestigationObject>() : CaseDetailGenerator.BuildObjects(CurrentContract.ContractId, Materials);
+        public IReadOnlyList<InvestigationObject> GetInvestigationObjects()
+        {
+            if (CurrentContract == null) return new List<InvestigationObject>();
+            var objects = CaseDetailGenerator.BuildObjects(CurrentContract.ContractId, Materials);
+            // 이 의뢰에 배치한 메인 사건 문서의 보관 오브젝트는 항상 조사할 수 있어야 한다.
+            string planned = CurrentContract.PlannedClueObjectId;
+            if (planned != null && objects.All(o => o.ObjectId != planned))
+                objects.Add(new InvestigationObject { ObjectId = planned, RoomId = CaseCatalog.ObjectRoom(planned), Name = CaseCatalog.ObjectName(planned) });
+            return objects;
+        }
 
         /// <summary>조사한 오브젝트(다시 조사해도 새로 얻는 것은 없다 — 표시용).</summary>
         public HashSet<string> InvestigatedObjectIds { get; } = new HashSet<string>();
@@ -356,6 +466,7 @@ namespace CaseFileOmission.Game
                 DiscoverMainCaseCluesAtScene(result);
             if (PlayerRoom == Campaign.RebelMemoRoomId)
                 AcquireRebelMemo(result);
+            DiscoverPlannedMainCaseDocument(objectId, result);
 
             RollClueConfirmations(result);
             return AfterAction(result);
@@ -651,9 +762,8 @@ namespace CaseFileOmission.Game
 
         /// <summary>
         /// 물리적 증거·기록 조작 시도(06 확정: 보유 단서 조작 1시간 = 4칸).
-        /// 조작 가능 시점 전이면 Locked로 거부되고 시간도 쓰지 않는다. 성공 확률은 기본 70%에 확정 보정을 적용한다:
-        /// 담당 경찰의 플레이어 의심도 35 이상(-15, 경계값은 임시), 같은 방에 다른 생존 인물(-20),
-        /// 담당 경찰이 이미 확인한 단서(-10), 대상이 사실을 모름(+10, 호출자가 넘김).
+        /// 조작 가능 시점 전이면 Locked로 거부되고 시간도 쓰지 않는다. 06 2026-11-11·12 확정: 플레이어가 보유한 물리적 증거 단서만 대상이며
+        /// 성공 70%·실패 30% 고정이고, 성공·실패 모두 NPC나 경찰에게 발각되지 않는다(보정값 없음 — targetUnawareOfFacts는 호환용으로 무시).
         /// </summary>
         public ManipulationOutcomeResult AttemptPhysicalManipulation(string clueId, ManipulationType type, bool targetUnawareOfFacts = false)
         {
@@ -664,19 +774,18 @@ namespace CaseFileOmission.Game
                 return new ManipulationOutcomeResult { Outcome = ManipulationOutcome.Locked };
             if (!Clues.Exists(clueId) || Clues.GetRecord(clueId).WorldState != ClueWorldState.HeldByPlayer)
                 throw new ArgumentException("플레이어가 들고 있는 단서만 조작할 수 있습니다.", nameof(clueId));
+            if (Clues.GetDefinition(clueId).Format != ClueFormat.PhysicalObject)
+                throw new ArgumentException("물리적 증거 단서만 조작할 수 있습니다.", nameof(clueId));
 
             if (type == ManipulationType.Conceal && Clues.GetHeldByPlayerClueIds(CurrentContract.ContractId).Count < 2)
                 throw new ArgumentException("은폐하려면 대체할 다른 단서가 있어야 합니다.", nameof(type));
 
-            string handler = HandlerPoliceId;
-            bool suspicious = handler != null && PoliceSuspicion.GetSuspicion(handler, PlayerId) >= ProvisionalSuspiciousThreshold;
-            bool witnessed = Occupancy.GetOccupants(PlayerRoom).Any(id =>
-                id != PlayerId && ((Npcs.Exists(id) && Npcs.Get(id).IsAlive) || (PoliceRoster.AllPoliceIds.Contains(id) && PoliceLife.IsAlive(id))));
-            bool confirmed = handler != null && Clues.GetRecord(clueId).ConfirmedByPoliceIds.Contains(handler);
-
             var result = SpendTime(DefaultActionCost);
-            var outcome = PhysicalManipulation.Attempt(type, clueId, PlayerId, suspicious, witnessed, confirmed, targetUnawareOfFacts,
+            var outcome = PhysicalManipulation.Attempt(type, clueId, PlayerId, false, false, false, false,
                 Clues.GetHeldByPlayerClueIds(CurrentContract.ContractId));
+            // 2026-11-16 확정 은폐: 지정한 단서 하나의 접근 상태만 바꾼다. 보유 단서 조작은 성공·실패 모두 발각되지 않는다(06).
+            if (type == ManipulationType.Conceal && outcome.Outcome != ManipulationOutcome.Locked)
+                Clues.GetRecord(clueId).ApplyConcealment(outcome.Outcome == ManipulationOutcome.Succeeded, detected: false);
             AfterAction(result);
             return outcome;
         }
@@ -684,7 +793,7 @@ namespace CaseFileOmission.Game
         /// <summary>
         /// 시간 보내기(09 2026-11-12). 다른 행동 없이 지금 위치에 머문 채 남은 조사 예산과 세계 시각을 함께 진행하고,
         /// 그동안 NPC 일정·위치·정보 전달을 시간순으로 갱신한다. 남은 예산보다 긴 시간은 거부한다(상태 변화 없음).
-        /// 원문 단위는 15분이지만 현재 조사 예산 모델은 1칸(1시간) 단위라 칸 단위로 받는다(임시 — 시간 단위 통일은 남은 작업).
+        /// 1칸 = 15분(06 2026-11-12 확정 시간 단위).
         /// 예산을 다 쓰면 구간이 끝나며, 이후 처리(회의 또는 다음 구간)는 기존 구간 종료 흐름을 따른다.
         /// </summary>
         public GameActionResult PassTime(int slots)
@@ -968,6 +1077,11 @@ namespace CaseFileOmission.Game
             foreach (var delta in LastCardResolution.SuspicionDeltas)
                 ApplySuspicionDelta(delta);
 
+            // 2026-11-16 확정 은폐: 회의 카드 은폐도 플레이어가 지정한 카드(단서) 하나의 접근 상태만 바꾼다.
+            // 대체로 제시된 카드·다른 단서·다른 참가자가 이미 가진 정보는 바꾸지 않는다. 발각(거짓 탐지)은 별도 상태로 남긴다.
+            if (manipulation == CardManipulation.Conceal && card.ManipulationRecordApplied != null && Clues.Exists(clueId))
+                Clues.GetRecord(clueId).ApplyConcealment(true, LastCardResolution.Judgements.Any(j => j.Participated && j.LieDetected));
+
             // 수용한 주장·증거는 그 인물의 개인 의견에만 반영된다(거절하면 반영하지 않는다). 은폐는 대체 카드, 왜곡은 뒤집힌 방향으로 본다.
             string shown = card.ManipulationRecordApplied?.DisplayedClueId ?? clueId;
             var inputs = OpinionInputsFor(shown, manipulation == CardManipulation.Distort).ToList();
@@ -1175,6 +1289,7 @@ namespace CaseFileOmission.Game
             Pursuit = Pursuit,
             Firearm = Firearm,
             OrganizationSupport = OrganizationSupport,
+            OrgSupplementary = OrgSupplementary,
             Campaign = Campaign,
             Materials = Materials
         };
@@ -1210,14 +1325,11 @@ namespace CaseFileOmission.Game
                     _ => ContractEndKind.Unsolved
                 };
 
-                string next = null;
+                // 07 2026-11-13: 담당 경찰 사망 시 다음 담당은 다음 의뢰 생성 때 배정 대기열에서 고르고,
+                // 추가 +10은 그 담당에게 배정 시점에 적용한다(미적용 여부를 저장). 여기서는 전원 +5만 적용한다.
                 if (kind == ContractEndKind.HandlerPoliceDeceased)
-                {
-                    var candidates = PoliceRoster.AllPoliceIds.Where(id => id != contract.HandlerPoliceId && PoliceLife.IsAlive(id)).ToList();
-                    next = candidates.Count == 0 ? null : candidates[_random.Next(candidates.Count)];
-                    Campaign.NextHandlerPoliceId = next;
-                }
-                PoliceSuspicion.ApplyContractEndEffects(PlayerId, contract.HandlerPoliceId, Campaign.HandlerStartingSuspicion, kind, next);
+                    Campaign.PendingHandlerDeathBonus = true;
+                PoliceSuspicion.ApplyContractEndEffects(PlayerId, contract.HandlerPoliceId, Campaign.HandlerStartingSuspicion, kind, null);
 
                 if (contract.OrgCondition.HasCondition)
                     contract.OrgCondition.Achieved = OrganizationConditionEvaluator.Evaluate(contract, Clues, deliveredToOrganization: true) ?? false;
@@ -1232,6 +1344,7 @@ namespace CaseFileOmission.Game
             }
 
             MainCase.RecordContractCompleted();
+            if (!abandoned) Campaign.CompletedContractCount++;
             Campaign.PreviousConditionType = contract.OrgCondition.Type;
 
             if (inMeeting) State.ResolveContract();
@@ -1252,7 +1365,61 @@ namespace CaseFileOmission.Game
             DeliverOrganizationMainCaseClues(contract);
             AdvanceMainCaseStages();
             CheckEndings();
+
+            // 06 의뢰 종료 순서: 결과 확정 → 조직 조건·신뢰도 변화 → 신뢰도 0 검사(CheckEndings) → 놓친 자료의 조직 지원 판정.
+            // 판정은 변화 뒤 신뢰도로 한다. 의뢰가 끝나 대기 상태가 되었으므로 성공한 자료는 바로 전달하고 전화로 한 번 알린다.
+            if (!IsGameOver)
+            {
+                OrgSupplementary.Evaluate(BuildOrgSupportContext(contract.ContractId));
+                DeliverOrgSupplementaryReports();
+            }
         }
+
+        public const string OrgDeliveryPhoneLine = "조직이 보유한 기존 기록의 발췌 자료를 보냈다. 컴퓨터의 조직 전달 자료 폴더에서 확인해라.";
+
+        private OrgSupportContext BuildOrgSupportContext(string contractId) => new OrgSupportContext
+        {
+            Trust = Organization.Trust,
+            ContractId = contractId,
+            PlayerHolds = name => MainCase.HasAcquired(name),
+            StageUnlocked = stage => MainCase.CurrentStage >= ToMainStage(stage),
+            ContractsCompletedSinceUnlock = stage =>
+                Campaign.StageUnlockedAtCompleted.TryGetValue(ToMainStage(stage).ToString(), out var at) ? Campaign.CompletedContractCount - at : 0,
+            // 고정 설정 데이터(EXPERIMENT_PRESSURE_V1 등)는 항상 존재한다. 문서 자료는 플레이어가 얻었거나 어느 의뢰에 실제로 배치된 것만 존재한다.
+            SourceAvailable = label => label.All(ch => ch < 0x80) || MainCase.HasAcquired(label) || Campaign.GeneratedMainDocuments.Contains(label),
+            FinalReportComplete = FinalReport.Report.IsComplete
+        };
+
+        private static MainCaseTruthStage ToMainStage(OrgTruthStage stage) => stage switch
+        {
+            OrgTruthStage.Systemic => MainCaseTruthStage.SystemicTruth,
+            OrgTruthStage.Power => MainCaseTruthStage.PowerTruth,
+            OrgTruthStage.Experiment => MainCaseTruthStage.ExperimentTruth,
+            _ => MainCaseTruthStage.DesignerTruth
+        };
+
+        /// <summary>
+        /// 06: 의뢰·조사·사건보드·회의 중에는 전달하지 않는다. 대기 상태에서만 대기열을 비우고, 같은 경계에서 여러 건이 와도 전화는 1회다.
+        /// </summary>
+        private void DeliverOrgSupplementaryReports()
+        {
+            if (CurrentContract != null || State.CurrentPhase != GamePhase.Idle) return;
+            if (OrgSupplementary.DeliverPending(WorldMinute).Count > 0)
+                Campaign.PendingOrgDeliveryCall = true;
+        }
+
+        /// <summary>조직 전달 자료 알림 전화를 아직 하지 않았으면 true를 돌려주고 알린 것으로 표시한다.</summary>
+        public bool ConsumeOrgDeliveryCall()
+        {
+            if (!Campaign.PendingOrgDeliveryCall) return false;
+            Campaign.PendingOrgDeliveryCall = false;
+            return true;
+        }
+
+        /// <summary>조직 전달 자료 폴더 목록(전달된 자료만, 전달 순).</summary>
+        public IReadOnlyList<OrgReportState> DeliveredOrgReports =>
+            OrgSupplementary.States.Where(s => s.DeliveryStatus == OrgReportDeliveryStatus.Delivered)
+                .OrderBy(s => s.DeliveredWorldMinute).ThenBy(s => s.Id, StringComparer.Ordinal).ToList();
 
         /// <summary>
         /// 03 확정: 의뢰 종료 후 다음 의뢰를 받기 전에만 조직이 추가 단서를 전달하며, 여러 개면 한꺼번에 전달한다.
@@ -1429,6 +1596,8 @@ namespace CaseFileOmission.Game
             int acceptedLies = MeetingResolver?.GetAcceptedLieCount(PlayerId) ?? 0;
             foreach (var clueId in result.NewClueIds)
             {
+                // 은폐한 단서는 접근 가능 상태가 아니므로 확인 요청 대상에서 뺀다(그 단서 하나에만 적용).
+                if (Clues.Exists(clueId) && Clues.GetRecord(clueId).IsConcealed) continue;
                 var roll = _confirmation.Roll(handler, sameRoom, PoliceSuspicion.GetSuspicion(handler, PlayerId), 0, acceptedLies);
                 if (roll.Requested)
                 {
@@ -1457,6 +1626,18 @@ namespace CaseFileOmission.Game
                     result.NewMainCaseClues.Add(MainCaseClueAcquisitionService.GetClueName(code));
             }
             AdvanceMainCaseStages();
+        }
+
+        /// <summary>
+        /// 이 의뢰에 배치한 메인 사건 문서(권력의 진실 자료·반복 실험 번호 목록)를 보관 오브젝트에서 찾는다. 같은 문서는 한 번만 얻는다.
+        /// </summary>
+        private void DiscoverPlannedMainCaseDocument(string objectId, GameActionResult result)
+        {
+            var c = CurrentContract;
+            if (c?.PlannedMainCaseClue == null || c.PlannedClueObjectId == null || c.PlannedClueObjectId != objectId) return;
+            if (MainCase.HasAcquired(c.PlannedMainCaseClue)) return;
+            GrantMainCaseDocument($"maincase:{c.ContractId}:{c.PlannedMainCaseClue}", c.PlannedMainCaseClue);
+            result.NewMainCaseClues.Add(c.PlannedMainCaseClue);
         }
 
         public const string RebelMemoClueId = "maincase:RebelInternalCircularMemo";
@@ -1520,6 +1701,10 @@ namespace CaseFileOmission.Game
         private void AdvanceMainCaseStages()
         {
             while (MainCase.TryAdvanceStage()) { }
+            // 조직 보조 자료 조건 D의 기준점: 각 진실 단계가 처음 열린 시점의 완료 의뢰 수.
+            foreach (MainCaseTruthStage stage in Enum.GetValues(typeof(MainCaseTruthStage)))
+                if (stage <= MainCase.CurrentStage && !Campaign.StageUnlockedAtCompleted.ContainsKey(stage.ToString()))
+                    Campaign.StageUnlockedAtCompleted[stage.ToString()] = Campaign.CompletedContractCount;
         }
 
         private List<ICardJudge> BuildJudges()
@@ -1567,11 +1752,13 @@ namespace CaseFileOmission.Game
         /// <summary>07 2026-11-12: 경찰 초기 정보(police_snapshot)에 피해자로 나온 인물만 처음부터 '피해자'로 공개한다.</summary>
         private void RevealVictimFromPoliceSnapshot(ContractInstance contract)
         {
-            string victim = contract.Truth.VictimId;
-            if (victim == null || !Npcs.Exists(victim)) return;
-            string name = Npcs.Get(victim).DisplayName;
-            if (!string.IsNullOrEmpty(name) && contract.PoliceKnownFacts.Any(f => f.Contains(name)))
-                SetPublicRole(victim, PublicRole.Victim);
+            foreach (var victim in new[] { contract.Truth.VictimId }.Concat(contract.Truth.AdditionalVictimIds))
+            {
+                if (victim == null || !Npcs.Exists(victim)) continue;
+                string name = Npcs.Get(victim).DisplayName;
+                if (!string.IsNullOrEmpty(name) && contract.PoliceKnownFacts.Any(f => f.Contains(name)))
+                    SetPublicRole(victim, PublicRole.Victim);
+            }
         }
 
         /// <summary>
@@ -1606,6 +1793,20 @@ namespace CaseFileOmission.Game
         /// <summary>상태 기반 엔딩(체포·경찰 전원 제거·조직 신뢰도 0)을 검사한다. 체포 판정은 진행 중 의뢰의 담당 경찰 기준이다.</summary>
         public void CheckEndings()
         {
+            // 경찰 추적 중: 의심도 100인 경찰이 한 명이라도 있으면 추적 성공 판정보다 즉시 체포가 우선한다.
+            // 아니면 의심도 70 이상 경찰이 2명 이하일 때 추적 성공(의심도 약 50 조정·추적 종료·일반 의뢰 복귀).
+            if (!IsGameOver && Pursuit.Stage != PursuitStage.NotActive)
+            {
+                var check = Pursuit.Evaluate(PlayerId, PoliceRoster.AllPoliceIds.Where(PoliceLife.IsAlive));
+                if (check == PursuitCheckResult.ArrestRequired)
+                {
+                    ExecuteEnding(GameEndingType.Arrest);
+                    return;
+                }
+                if (check == PursuitCheckResult.CompletedSuccess)
+                    State.EventLog.TryRecord(new GameEvent($"pursuit-ended:{NextEventId("pursuit")}", GameEventType.Custom, CurrentContract?.ContractId, "success"));
+            }
+
             var before = Endings.GameOverEnding;
             if (Endings.TryEvaluateAndExecute(PlayerId, PoliceLife, HandlerPoliceId) && before == null && Endings.GameOverEnding.HasValue)
             {

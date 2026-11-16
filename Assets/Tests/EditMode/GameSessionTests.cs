@@ -241,9 +241,16 @@ namespace CaseFileOmission.Tests
             Assume.That(s.PoliceLife.IsAlive(handler), Is.False, "이 시드에서는 3발 안에 명중해야 한다.");
             Assert.AreEqual(ContractOutcome.HandlerPoliceDeceased, contract.OfficialConclusion.Outcome);
             Assert.AreEqual(GamePhase.Idle, s.State.CurrentPhase);
-            Assert.IsNotNull(s.Campaign.NextHandlerPoliceId);
-            Assert.AreEqual(15f, s.PoliceSuspicion.GetSuspicion(s.Campaign.NextHandlerPoliceId, s.PlayerId), 0.001f,
-                "다음 담당 경찰은 +5 +10 = +15.");
+            // 07 2026-11-13: 사망 시점에는 전원 +5, 추가 +10은 다음 의뢰에서 대기열로 배정된 담당에게 적용한다.
+            Assert.IsTrue(s.Campaign.PendingHandlerDeathBonus);
+            foreach (var id in Police.PoliceRoster.AllPoliceIds.Where(s.PoliceLife.IsAlive))
+                Assert.AreEqual(5f, s.PoliceSuspicion.GetSuspicion(id, s.PlayerId), 0.001f);
+
+            s.OfferContract();
+            Assert.IsTrue(s.AcceptContract().Success);
+            Assert.AreNotEqual(handler, s.HandlerPoliceId);
+            Assert.AreEqual(15f, s.PoliceSuspicion.GetSuspicion(s.HandlerPoliceId, s.PlayerId), 0.001f, "다음 담당 경찰은 +5 +10 = +15.");
+            Assert.IsFalse(s.Campaign.PendingHandlerDeathBonus);
         }
 
         [Test]
@@ -330,10 +337,16 @@ namespace CaseFileOmission.Tests
             s.LeaveMeeting();
             Assert.IsTrue(s.IsPhysicalManipulationUnlocked);
 
-            var result = s.AttemptPhysicalManipulation(clue, Evidence.ManipulationType.Distort, targetUnawareOfFacts: false);
+            // 06 2026-11-11·12 확정: 보유한 물리적 증거 단서만, 성공 70% 고정(보정 없음).
+            var held = s.Clues.GetHeldByPlayerClueIds(s.CurrentContract.ContractId);
+            string nonPhysical = held.FirstOrDefault(id => s.Clues.GetDefinition(id).Format != Evidence.ClueFormat.PhysicalObject);
+            if (nonPhysical != null)
+                Assert.Throws<System.ArgumentException>(() => s.AttemptPhysicalManipulation(nonPhysical, Evidence.ManipulationType.Distort));
+            string physical = held.FirstOrDefault(id => s.Clues.GetDefinition(id).Format == Evidence.ClueFormat.PhysicalObject);
+            Assume.That(physical, Is.Not.Null, "이 시드에서 물리 증거를 얻지 못함");
+            var result = s.AttemptPhysicalManipulation(physical, Evidence.ManipulationType.Distort);
             Assert.AreNotEqual(Evidence.ManipulationOutcome.Locked, result.Outcome);
-            Assert.GreaterOrEqual(result.ProbabilityUsed, 5f);
-            Assert.LessOrEqual(result.ProbabilityUsed, 70f, "기본 70%에서 감소 보정만 붙을 수 있는 조건이다.");
+            Assert.AreEqual(70f, result.ProbabilityUsed);
         }
 
         [Test]
