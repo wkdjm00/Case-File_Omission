@@ -30,6 +30,13 @@ namespace CaseFileOmission.Playtest
 
         public bool IsMoving => _path.Count > 0;
 
+        /// <summary>걷던 경로를 버린다(키보드로 직접 움직일 때).</summary>
+        public void Stop()
+        {
+            _path.Clear();
+            HideOnArrive = false;
+        }
+
         public void MoveAlong(IEnumerable<Vector3> waypoints)
         {
             _path.Clear();
@@ -353,8 +360,8 @@ namespace CaseFileOmission.Playtest
                 piece.transform.GetChild(0).localRotation = lying ? Quaternion.Euler(0, 0, 90) : Quaternion.identity;
 
                 var target = SlotPosition(room, byRoom[room].IndexOf(pair.Key));
-                // 플레이어 말은 바닥 클릭으로 자유롭게 걷는다 — 같은 방 안에 있거나 걷는 중이면 자리 배치로 옮기지 않는다.
-                if (pair.Key == s.PlayerId && (piece.IsMoving || RoomAt(piece.transform.position) == room)) continue;
+                // 플레이어 말은 WASD로 자유롭게 걷는다 — 그 방 안(문턱 포함)에 있거나 걷는 중이면 자리 배치로 옮기지 않는다.
+                if (pair.Key == s.PlayerId && (piece.IsMoving || IsInsideRoom(piece.transform.position, room, 0.4f))) continue;
                 bool visible = pair.Key == s.PlayerId || IsObservable(s, room, target, byRoom);
                 bool wasVisible = piece.gameObject.activeSelf;
                 string fromRoom = RoomAt(piece.transform.position);
@@ -476,50 +483,105 @@ namespace CaseFileOmission.Playtest
             var label = MakeLabel(root, name, 0.08f, new Color(1f, 0.95f, 0.75f));
             label.transform.localPosition = new Vector3(0, 0.7f, 0);
             label.gameObject.AddComponent<FaceCamera>();
+            // 09 §4: 이름은 가까이 갔을 때만 FieldHud가 이름 띠로 보인다. 판 위 상시 이름표는 끈다.
+            label.gameObject.SetActive(false);
             return root;
         }
 
-        public enum InteractableKind { None, Object, Npc }
+        public enum InteractableKind { None, Object, Npc, Police }
+
+        /// <summary>같은 방에서 보이는 대상 하나(조사 오브젝트·살아 있는 NPC·살아 있는 경찰)와 플레이어까지의 수평 거리.</summary>
+        public readonly struct Nearby
+        {
+            public readonly InteractableKind Kind;
+            public readonly string Id;
+            public readonly Vector3 Position;
+            public readonly float Distance;
+
+            public Nearby(InteractableKind kind, string id, Vector3 position, float distance)
+            {
+                Kind = kind; Id = id; Position = position; Distance = distance;
+            }
+
+            /// <summary>상호작용 거리(09 TEMP_LAYOUT_V1): 물체 1.5 m, 대화 2.0 m.</summary>
+            public float InteractRange => Kind == InteractableKind.Object ? TempLayoutV1.InteractionRange : TempLayoutV1.ConversationRange;
+        }
+
+        /// <summary>플레이어와 같은 방에 있고 range 안에 있는 대상들. 벽 너머·관찰 범위 밖 인물·사망자는 넣지 않는다.</summary>
+        public List<Nearby> NearbyTargets(GameSession s, float range, bool includeDead = false)
+        {
+            var list = new List<Nearby>();
+            if (s?.CurrentContract == null || !_pieces.TryGetValue(s.PlayerId, out var me)) return list;
+            var here = RoomAt(me.transform.position);
+            if (here == null) return list;
+            var mine = me.transform.position;
+            foreach (var pair in _objectMarkers)
+            {
+                if (pair.Value == null || ContractContent.CaseCatalog.ObjectRoom(pair.Key) != here) continue;
+                float dist = Flat(pair.Value.position - mine);
+                if (dist <= range) list.Add(new Nearby(InteractableKind.Object, pair.Key, pair.Value.position, dist));
+            }
+            foreach (var pair in _pieces)
+            {
+                if (pair.Key == s.PlayerId || !pair.Value.gameObject.activeSelf) continue;
+                InteractableKind kind;
+                if (s.Npcs.Exists(pair.Key)) { if (!includeDead && !s.Npcs.Get(pair.Key).IsAlive) continue; kind = InteractableKind.Npc; }
+                else if (PoliceRoster.AllPoliceIds.Contains(pair.Key)) { if (!includeDead && !s.PoliceLife.IsAlive(pair.Key)) continue; kind = InteractableKind.Police; }
+                else continue;
+                if (RoomAt(pair.Value.transform.position) != here) continue;
+                float dist = Flat(pair.Value.transform.position - mine);
+                if (dist <= range) list.Add(new Nearby(kind, pair.Key, pair.Value.transform.position, dist));
+            }
+            return list;
+        }
 
         /// <summary>
-        /// 플레이어가 상호작용 거리(09 TEMP_LAYOUT_V1: 1.5 m) 안에 있는 가장 가까운 대상. 같은 방의 조사 오브젝트 또는
-        /// 보이는 살아 있는 NPC만 고른다.
+        /// 플레이어가 상호작용 거리 안에 있는 가장 가까운 대상(09 TEMP_LAYOUT_V1: 조사 1.5 m, 대화 2.0 m).
+        /// 같은 방의 조사 오브젝트, 보이는 살아 있는 NPC·경찰만 고른다.
         /// </summary>
         public InteractableKind FindInteractable(GameSession s, out string id)
         {
             id = null;
-            if (s?.CurrentContract == null || !_pieces.TryGetValue(s.PlayerId, out var me)) return InteractableKind.None;
-            var here = RoomAt(me.transform.position);
-            float best = TempLayoutV1.InteractionRange;
-            var kind = InteractableKind.None;
-            foreach (var pair in _objectMarkers)
-            {
-                if (pair.Value == null || ContractContent.CaseCatalog.ObjectRoom(pair.Key) != here) continue;
-                float dist = Flat(pair.Value.position - me.transform.position);
-                if (dist <= best) { best = dist; id = pair.Key; kind = InteractableKind.Object; }
-            }
-            foreach (var pair in _pieces)
-            {
-                if (pair.Key == s.PlayerId || !s.Npcs.Exists(pair.Key) || !s.Npcs.Get(pair.Key).IsAlive || !pair.Value.gameObject.activeSelf) continue;
-                if (RoomAt(pair.Value.transform.position) != here) continue;
-                float dist = Flat(pair.Value.transform.position - me.transform.position);
-                if (dist <= best) { best = dist; id = pair.Key; kind = InteractableKind.Npc; }
-            }
-            return kind;
+            var best = NearbyTargets(s, TempLayoutV1.ConversationRange)
+                .Where(n => n.Distance <= n.InteractRange)
+                .Where(n => n.Kind != InteractableKind.Police || n.Id == s.HandlerPoliceId)
+                .OrderBy(n => n.Distance)
+                .FirstOrDefault();
+            if (best.Kind == InteractableKind.None) return InteractableKind.None;
+            id = best.Id;
+            return best.Kind;
         }
+
+        public Vector3? PiecePosition(string occupantId) => _pieces.TryGetValue(occupantId, out var p) ? p.transform.position : (Vector3?)null;
+        public Vector3? ObjectPosition(string objectId) => _objectMarkers.TryGetValue(objectId, out var t) && t != null ? t.position : (Vector3?)null;
+
+        public static bool IsInsideRoom(Vector3 p, string roomId, float margin)
+        {
+            var r = TempLayoutV1.GetRoom(roomId);
+            return r != null && r.Contains(p.x, p.z, -margin);
+        }
+
+        /// <summary>문턱(공유 벽 두께)에서 방이 엇갈려 판정되지 않게, 방 안쪽으로 확실히 들어왔을 때만 그 방을 돌려준다.</summary>
+        public static string RoomStrictlyAt(Vector3 p) =>
+            TempLayoutV1.Rooms.FirstOrDefault(r => r.Contains(p.x, p.z, 0.05f))?.RoomId;
 
         private static float Flat(Vector3 v) { v.y = 0; return v.magnitude; }
 
         private readonly List<GameObject> _exchangeMarks = new List<GameObject>();
+        private readonly HashSet<string> _talking = new HashSet<string>();
+
+        /// <summary>지금 다른 NPC와 대화 중인(보이는) 인물. 09 §2 대화 상태 아이콘을 띄울 대상.</summary>
+        public IReadOnlyCollection<string> TalkingIds => _talking;
 
         /// <summary>
-        /// 08: 지금 같은 방에서 NPC끼리 대화 중이면 두 인물 위에 말풍선을, 방 벽 쪽에 귀(엿듣기 가능) 표시를 띄운다.
-        /// 보이지 않는 인물의 대화는 표시하지 않는다. 말풍선 안 내용은 엿듣기 전에는 보여 주지 않는다.
+        /// 08·09: 지금 같은 방에서 NPC끼리 대화 중이면 두 인물을 대화 상태로 표시하고(아이콘은 FieldHud가 그린다), 방 벽 쪽에 귀(엿듣기 가능) 표시를 띄운다.
+        /// 보이지 않는 인물의 대화는 표시하지 않는다. 대화 내용은 엿듣기 전에는 보여 주지 않는다.
         /// </summary>
         public void ShowExchanges(GameSession s)
         {
             foreach (var go in _exchangeMarks) if (go != null) Destroy(go);
             _exchangeMarks.Clear();
+            _talking.Clear();
             if (s.CurrentContract == null || s.PlayerRoom == null) return;
 
             bool any = false;
@@ -527,8 +589,8 @@ namespace CaseFileOmission.Playtest
             {
                 if (!IsPieceVisible(e.SpeakerId) || !IsPieceVisible(e.ListenerId)) continue;
                 any = true;
-                Bubble(_pieces[e.SpeakerId].transform, "( … )");
-                Bubble(_pieces[e.ListenerId].transform, "( … )");
+                _talking.Add(e.SpeakerId);
+                _talking.Add(e.ListenerId);
             }
             if (!any) return;
             var r = TempLayoutV1.GetRoom(s.PlayerRoom);
@@ -536,14 +598,6 @@ namespace CaseFileOmission.Playtest
             ear.transform.position = new Vector3(r.CenterX - r.Width * 0.5f + 0.4f, 1.4f, r.CenterZ + r.Depth * 0.5f - 0.3f);
             ear.gameObject.AddComponent<FaceCamera>();
             _exchangeMarks.Add(ear.gameObject);
-        }
-
-        private void Bubble(Transform piece, string text)
-        {
-            var tm = MakeLabel(piece, text, 0.1f, new Color(1f, 1f, 0.85f));
-            tm.transform.localPosition = new Vector3(0.35f, 1.65f, 0);
-            tm.gameObject.AddComponent<FaceCamera>();
-            _exchangeMarks.Add(tm.gameObject);
         }
 
         /// <summary>지금 화면에 보이는 인물인지(관찰 범위 안). 클릭·말풍선 표시에 쓴다.</summary>
@@ -660,6 +714,8 @@ namespace CaseFileOmission.Playtest
             piece.Label = MakeLabel(root, id, 0.1f, Color.white);
             piece.Label.transform.localPosition = new Vector3(0, 1.35f, 0);
             piece.Label.gameObject.AddComponent<FaceCamera>();
+            // 09 §4: 인물 이름은 접근했을 때만 FieldHud가 이름 띠로 보인다. 판 위 상시 이름표는 끈다.
+            piece.Label.gameObject.SetActive(false);
             return piece;
         }
 

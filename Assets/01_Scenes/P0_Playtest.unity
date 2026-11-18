@@ -152,6 +152,28 @@ MonoBehaviour:
   Board: {fileID: 1613268542}
   Desk: {fileID: 2123302739}
   MainCamera: {fileID: 1069765138}
+  Art:
+    StatusExclaim: {fileID: 2800000, guid: c16b2f8aca4b27642a9ddfac7d9cf076, type: 3}
+    StatusQuestion: {fileID: 2800000, guid: d118a0968d733d642b04360f69af72fe, type: 3}
+    StatusTalk: {fileID: 2800000, guid: 67858deea3940ee44bfcf4cb429b2906, type: 3}
+    StatusSweat: {fileID: 2800000, guid: 2a8490a54c2ae3c40af09fe496bb8e3f, type: 3}
+    StatusEye: {fileID: 2800000, guid: 6773e255a0b669a41860bc2f9c624266, type: 3}
+    StatusSound: {fileID: 2800000, guid: eeddfb460647f924495715384e839b03, type: 3}
+    PromptTalk: {fileID: 2800000, guid: 83c1ef4a31686d245974d8bb3e402a7c, type: 3}
+    PromptInvestigate: {fileID: 2800000, guid: e1494c94c1dd51a40800fd19ec846303, type: 3}
+    PersonNamePlate: {fileID: 2800000, guid: 73e4d0079cd03e34dba57c45c41eb06e, type: 3}
+    ItemNamePlate: {fileID: 2800000, guid: d370e351cd9da264c8c4a3ba4c72799b, type: 3}
+    Portraits:
+    - {fileID: 2800000, guid: 15bc1beddda14a84f926562dec41ddd2, type: 3}
+    - {fileID: 2800000, guid: 1aa96a5593ebe5d41a3cab2c277b96b4, type: 3}
+    - {fileID: 2800000, guid: c814a51b6f127554d8d70e827b13058b, type: 3}
+    - {fileID: 2800000, guid: da5d322baf460e64ca490e92d76d92f0, type: 3}
+    - {fileID: 2800000, guid: 6941495e5eb1b85458fcd00b1f4b17ee, type: 3}
+    - {fileID: 2800000, guid: ff5d474c88e61334ca60db3c38a49c8a, type: 3}
+    - {fileID: 2800000, guid: cfd47f00667b6f54b9650fe81f3f3849, type: 3}
+    - {fileID: 2800000, guid: b29104dd90dbc894bbc23d37d70c4ec8, type: 3}
+    - {fileID: 2800000, guid: 5605d6a04b8721e46b57eda529afe7cd, type: 3}
+    - {fileID: 2800000, guid: 6e25bfade9cc1a7499a93d7f1ff0e181, type: 3}
   DefaultSeed: 7
 --- !u!4 &539845557
 Transform:
@@ -549,6 +571,7 @@ GameObject:
   m_Component:
   - component: {fileID: 1949861856}
   - component: {fileID: 1949861855}
+  - component: {fileID: 1949861857}
   m_Layer: 0
   m_Name: Directional Light
   m_TagString: Untagged
@@ -636,6 +659,35 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 50, y: -30, z: 0}
+--- !u!114 &1949861857
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1949861854}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 474bcb49853aa07438625e644c072ee6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.RenderPipelines.Universal.Runtime::UnityEngine.Rendering.Universal.UniversalAdditionalLightData
+  m_UsePipelineSettings: 1
+  m_AdditionalLightsShadowResolutionTier: 2
+  m_CustomShadowLayers: 0
+  m_LightCookieSize: {x: 1, y: 1}
+  m_LightCookieOffset: {x: 0, y: 0}
+  m_SoftShadowQuality: 0
+  m_RenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_ShadowRenderingLayersMask:
+    serializedVersion: 0
+    m_Bits: 1
+  m_Version: 4
+  m_LightLayerMask: 1
+  m_ShadowLayerMask: 1
+  m_RenderingLayers: 1
+  m_ShadowRenderingLayers: 1
 --- !u!1 &2123302738
 GameObject:
   m_ObjectHideFlags: 0

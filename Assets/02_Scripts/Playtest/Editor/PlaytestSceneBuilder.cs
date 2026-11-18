@@ -49,6 +49,7 @@ namespace CaseFileOmission.Playtest.Editor
             var game = root.AddComponent<PlaytestGame>();
             game.MainCamera = camera;
             game.UiFont = AssetDatabase.LoadAssetAtPath<Font>("Assets/00_Art/04_Fonts/Galmuri/Galmuri11.ttf");
+            game.Art = LoadFieldArt();
 
             var board = new GameObject("Board").AddComponent<BoardView>();
             board.transform.SetParent(root.transform, false);
@@ -70,6 +71,40 @@ namespace CaseFileOmission.Playtest.Editor
             AddToBuildSettings();
             if (additive) EditorSceneManager.CloseScene(scene, true);
             Debug.Log($"[P0] 테스트 씬을 만들었습니다: {ScenePath}");
+        }
+
+        private const string InteractionUi = "Assets/00_Art/02_Textures/UI/Interaction/";
+        private const string ComputerUi = "Assets/00_Art/02_Textures/UI/Computer/";
+
+        /// <summary>현장 HUD·상태 아이콘·접근 안내에 쓰는 임시 UI 이미지(09 시안). 메뉴 Case File > 현장 UI 이미지 연결로 열린 씬에도 다시 연결할 수 있다.</summary>
+        public static FieldArt LoadFieldArt()
+        {
+            Texture2D T(string path) => AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+            return new FieldArt
+            {
+                StatusExclaim = T(InteractionUi + "NPC_상태아이콘_00.png"),
+                StatusQuestion = T(InteractionUi + "NPC_상태아이콘_01.png"),
+                StatusTalk = T(InteractionUi + "NPC_상태아이콘_02.png"),
+                StatusSweat = T(InteractionUi + "NPC_상태아이콘_03.png"),
+                StatusEye = T(InteractionUi + "NPC_상태아이콘_04.png"),
+                StatusSound = T(InteractionUi + "NPC_상태아이콘_05.png"),
+                PromptTalk = T(InteractionUi + "상호작용_대화.png"),
+                PromptInvestigate = T(InteractionUi + "상호작용_조사.png"),
+                PersonNamePlate = T(InteractionUi + "인물_이름.png"),
+                ItemNamePlate = T(InteractionUi + "아이템_이름.png"),
+                Portraits = Enumerable.Range(0, 10).Select(i => T($"{ComputerUi}컴퓨터_인물이미지_{i:00}.png")).Where(t => t != null).ToArray()
+            };
+        }
+
+        [MenuItem("Case File/현장 UI 이미지 연결 (열린 P0 씬)")]
+        public static void RelinkFieldArt()
+        {
+            var game = UnityEngine.Object.FindAnyObjectByType<PlaytestGame>();
+            if (game == null) { Debug.LogWarning("[P0] 열린 씬에 PlaytestGame이 없습니다."); return; }
+            Undo.RecordObject(game, "현장 UI 이미지 연결");
+            game.Art = LoadFieldArt();
+            EditorUtility.SetDirty(game);
+            EditorSceneManager.MarkSceneDirty(game.gameObject.scene);
         }
 
         /// <summary>
