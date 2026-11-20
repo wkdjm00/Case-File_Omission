@@ -13,6 +13,8 @@ namespace CaseFileOmission.Playtest
     public static class Ui
     {
         public static Font Font;
+        /// <summary>컴퓨터 화면 전용 도트 폰트. 비어 있으면 기본 폰트를 쓴다.</summary>
+        public static Font ComputerFont;
 
         public static readonly Color PanelColor = new Color(0.09f, 0.10f, 0.11f, 0.94f);
         public static readonly Color SubPanelColor = new Color(0.16f, 0.17f, 0.19f, 0.96f);

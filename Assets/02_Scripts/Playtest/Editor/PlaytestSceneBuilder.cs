@@ -48,7 +48,8 @@ namespace CaseFileOmission.Playtest.Editor
             SceneManager.MoveGameObjectToScene(root, scene);
             var game = root.AddComponent<PlaytestGame>();
             game.MainCamera = camera;
-            game.UiFont = AssetDatabase.LoadAssetAtPath<Font>("Assets/00_Art/04_Fonts/Galmuri/Galmuri11.ttf");
+            game.UiFont = AssetDatabase.LoadAssetAtPath<Font>("Assets/00_Art/04_Fonts/DXTypeB/DXTypeB-KSCpc-EUC-H.ttf");
+            game.ComputerFont = AssetDatabase.LoadAssetAtPath<Font>("Assets/00_Art/04_Fonts/Galmuri/Galmuri11.ttf");
             game.Art = LoadFieldArt();
 
             var board = new GameObject("Board").AddComponent<BoardView>();

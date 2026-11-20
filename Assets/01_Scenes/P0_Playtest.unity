@@ -148,7 +148,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b0a67c8c55152eb4e8754e966c2f1abd, type: 3}
   m_Name: 
   m_EditorClassIdentifier: CaseFileOmission.Playtest::CaseFileOmission.Playtest.PlaytestGame
-  UiFont: {fileID: 12800000, guid: 6430fdc120ccfd54bba2832c1b519385, type: 3}
+  UiFont: {fileID: 12800000, guid: 04d15ba94069916498d327084bd1e1e2, type: 3}
+  ComputerFont: {fileID: 12800000, guid: 6430fdc120ccfd54bba2832c1b519385, type: 3}
   Board: {fileID: 1613268542}
   Desk: {fileID: 2123302739}
   MainCamera: {fileID: 1069765138}

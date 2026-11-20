@@ -27,6 +27,8 @@ namespace CaseFileOmission.Playtest
 
         [Header("보유 자산(씬 빌더가 연결)")]
         public Font UiFont;
+        [Tooltip("컴퓨터 화면 전용 도트 폰트")]
+        public Font ComputerFont;
         public BoardView Board;
         public DeskView Desk;
         public Camera MainCamera;
@@ -69,6 +71,7 @@ namespace CaseFileOmission.Playtest
         private void Awake()
         {
             Ui.Font = UiFont != null ? UiFont : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            Ui.ComputerFont = ComputerFont;
             if (MainCamera == null) MainCamera = Camera.main;
             BuildCanvas();
 

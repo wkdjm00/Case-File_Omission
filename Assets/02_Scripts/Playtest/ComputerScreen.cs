@@ -53,7 +53,16 @@ namespace CaseFileOmission.Playtest
 
         public void Open() => Rebuild();
 
+        /// <summary>컴퓨터 화면만 도트 폰트(Ui.ComputerFont)로 그린다. 나머지 화면은 기본 폰트를 쓴다.</summary>
         private void Rebuild()
+        {
+            var normal = Ui.Font;
+            if (Ui.ComputerFont != null) Ui.Font = Ui.ComputerFont;
+            try { RebuildCore(); }
+            finally { Ui.Font = normal; }
+        }
+
+        private void RebuildCore()
         {
             _g.CloseWindow();
             var body = Ui.Window(_g.WindowLayer, "컴퓨터", () => { _g.CloseWindow(); _g.RefreshHud(); }, out _);
