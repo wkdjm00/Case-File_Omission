@@ -25,6 +25,8 @@ namespace CaseFileOmission.Tests
                     && s.Materials.Any(m => (m.IdentifiesPerpetrator || m.SubjectNpcId == perp) && m.StatedInfoIds.Any(n.Knows)));
                 if (target == null) continue;
 
+                // 시간대 판정(2~3턴마다 10%)이 이미 살해를 계획한 상태로 둔다 — 실행 조건만 본다.
+                s.Campaign.SilencingPlanned = true;
                 for (int turn = 0; turn < 40 && !s.State.IsTimeBlockEnded; turn++)
                 {
                     // 매 턴 둘만 같은 방(플레이어·경찰·다른 NPC 없음)에 둔다.

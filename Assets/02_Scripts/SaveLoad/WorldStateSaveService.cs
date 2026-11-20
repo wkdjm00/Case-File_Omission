@@ -137,6 +137,12 @@ namespace CaseFileOmission.SaveLoad
         /// <summary>조사 중 가해자가 추가로 살해한 인물(사용자 지정 2026-11-20). 최초 피해자는 포함하지 않는다.</summary>
         public List<string> LaterVictimIds = new List<string>();
 
+        /// <summary>다음 입막음 살해 판정까지 남은 조사 시간대 수(0이면 아직 정하지 않음).</summary>
+        public int BlocksUntilSilencingCheck;
+
+        /// <summary>입막음 살해가 계획되어 조건이 맞기를 기다리는 중인지.</summary>
+        public bool SilencingPlanned;
+
         /// <summary>06 절도 부수사건(같은 행위·같은 물건에 하나). 목격·부재 발견한 NPC는 인물별로 따로 기록한다.</summary>
         public List<TheftIncident> TheftIncidents = new List<TheftIncident>();
 
@@ -444,6 +450,8 @@ namespace CaseFileOmission.SaveLoad
                 PlayerAccusedCaseId = t.Campaign?.PlayerAccusedCaseId,
                 StolenMaterialIds = t.Campaign?.StolenMaterialIds.ToArray() ?? Array.Empty<string>(),
                 LaterVictimIds = t.Campaign?.LaterVictimIds.ToArray() ?? Array.Empty<string>(),
+                BlocksUntilSilencingCheck = t.Campaign?.BlocksUntilSilencingCheck ?? 0,
+                SilencingPlanned = t.Campaign?.SilencingPlanned ?? false,
                 TheftIncidents = t.Campaign?.TheftIncidents.ToArray() ?? Array.Empty<TheftIncident>(),
                 RunId = t.Campaign?.RunId,
                 SaveSequence = t.Campaign?.SaveSequence ?? 0,
@@ -541,6 +549,8 @@ namespace CaseFileOmission.SaveLoad
                 t.Campaign.PlayerAccusedCaseId = string.IsNullOrEmpty(d.PlayerAccusedCaseId) ? null : d.PlayerAccusedCaseId;
                 t.Campaign.StolenMaterialIds = (d.StolenMaterialIds ?? Array.Empty<string>()).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
                 t.Campaign.LaterVictimIds = (d.LaterVictimIds ?? Array.Empty<string>()).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
+                t.Campaign.BlocksUntilSilencingCheck = Math.Max(0, d.BlocksUntilSilencingCheck);
+                t.Campaign.SilencingPlanned = d.SilencingPlanned;
                 t.Campaign.TheftIncidents = (d.TheftIncidents ?? Array.Empty<TheftIncident>()).Where(i => i != null && !string.IsNullOrEmpty(i.IncidentId)).ToList();
                 t.Campaign.RunId = d.RunId;
                 t.Campaign.SaveSequence = Math.Max(0, d.SaveSequence);

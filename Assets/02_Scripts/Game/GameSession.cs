@@ -468,6 +468,8 @@ namespace CaseFileOmission.Game
             Campaign.PlayerAccusedCaseId = null; // 이전 의뢰의 지목 상태를 다음 의뢰에 재사용하지 않는다.
             Campaign.StolenMaterialIds.Clear();
             Campaign.LaterVictimIds.Clear();
+            Campaign.BlocksUntilSilencingCheck = 0;
+            Campaign.SilencingPlanned = false;
             Campaign.TheftIncidents.Clear();
             if (Campaign.PendingHandlerDeathBonus)
             {
@@ -2052,6 +2054,7 @@ namespace CaseFileOmission.Game
                 AdvanceWorldTo(Campaign.BlockStartMinute);
             Campaign.NpcMinute = Campaign.BlockStartMinute;
             ApplyBlockSchedules(placeAtScheduleStart: false);
+            RollSilencingForBlock();
         }
 
         /// <summary>
@@ -2146,8 +2149,21 @@ namespace CaseFileOmission.Game
 
         /// <summary>한 의뢰의 사망자 상한(최초 피해자 포함, 사용자 지정 2026-11-20).</summary>
         public const int MaxContractDeaths = 5;
-        /// <summary>조건이 맞는 15분 턴마다 가해자가 입막음 살해를 실행할 확률(%). TEST_TEMP.</summary>
+        /// <summary>2~3 조사 시간대(턴)마다 한 번 굴리는 입막음 살해 계획 확률(%, 사용자 지정 2026-11-20).</summary>
         public const float SilencingChancePerTurn = 10f;
+
+        /// <summary>
+        /// 사용자 지정 2026-11-20: 턴 = 조사 시간대 하나가 끝나는 것. 2~3턴마다 10%로 살해를 계획하고,
+        /// 계획되면 이후 가해자가 범행을 아는 NPC와 단둘이 되는 첫 순간에 실행한다.
+        /// </summary>
+        private void RollSilencingForBlock()
+        {
+            if (CurrentContract == null || Campaign.SilencingPlanned) return;
+            if (Campaign.BlocksUntilSilencingCheck <= 0) Campaign.BlocksUntilSilencingCheck = _random.Next(2, 4);
+            if (--Campaign.BlocksUntilSilencingCheck > 0) return;
+            Campaign.BlocksUntilSilencingCheck = _random.Next(2, 4);
+            if (_random.NextDouble() * 100.0 < SilencingChancePerTurn) Campaign.SilencingPlanned = true;
+        }
 
         /// <summary>이번 의뢰에서 숨진 NPC 수(최초 피해자·추가 살해·사격 사망 모두 포함).</summary>
         public int ContractDeathCount => CurrentContract == null ? 0 : Npcs.GetByContract(CurrentContract.ContractId).Count(n => !n.IsAlive);
@@ -2176,7 +2192,9 @@ namespace CaseFileOmission.Game
             if (!Materials.Any(m => m.ContractId == CurrentContract.ContractId && (m.IdentifiesPerpetrator || m.SubjectNpcId == perpId)
                                     && m.StatedInfoIds.Any(target.Knows)))
                 return;
-            if (_random.NextDouble() * 100.0 >= SilencingChancePerTurn) return;
+            // 시간대 판정(RollSilencingForBlock)에서 계획된 살해만 실행한다.
+            if (!Campaign.SilencingPlanned) return;
+            Campaign.SilencingPlanned = false;
 
             target.MarkDeceased();
             Campaign.LaterVictimIds.Add(target.NpcId);

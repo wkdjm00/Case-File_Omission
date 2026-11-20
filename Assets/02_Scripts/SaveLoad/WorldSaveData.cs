@@ -416,6 +416,8 @@ namespace CaseFileOmission.SaveLoad
         public string PlayerAccusedCaseId;
         public string[] StolenMaterialIds;
         public string[] LaterVictimIds;
+        public int BlocksUntilSilencingCheck;
+        public bool SilencingPlanned;
         public TheftIncident[] TheftIncidents;
         public string RunId;
         public int SaveSequence;
