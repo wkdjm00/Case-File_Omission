@@ -6,6 +6,7 @@ using CaseFileOmission.Contracts;
 using CaseFileOmission.Game;
 using CaseFileOmission.MainCase;
 using CaseFileOmission.NPC;
+using CaseFileOmission.Rooms;
 using NUnit.Framework;
 
 namespace CaseFileOmission.Tests
@@ -197,7 +198,8 @@ namespace CaseFileOmission.Tests
                 Assert.AreEqual(actual.VictimOccupation, generated.Npcs.Get(generated.Contract.Truth.VictimId).Occupation);
                 Assert.GreaterOrEqual(DateTime.Parse(generated.Contract.IncidentDate), DateTime.Parse(actual.EarliestIncidentDate));
                 Assert.AreEqual(actual.DocumentObjectId, generated.Contract.PlannedClueObjectId);
-                Assert.AreEqual(actual.DocumentHolderTag, generated.Contract.DocumentHolderTag);
+                // 보유자를 피해자로 고정하고 태그가 없는 자료는 기본 태그 '자료 보관자'로 기록한다(AssignDocumentHolder).
+                Assert.AreEqual(actual.DocumentHolderTag ?? "자료 보관자", generated.Contract.DocumentHolderTag);
                 if (actual.HolderIsVictim)
                     Assert.AreEqual(generated.Contract.Truth.VictimId, generated.Contract.DocumentHolderNpcId);
                 else

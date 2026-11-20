@@ -182,7 +182,8 @@ namespace CaseFileOmission.Tests
         public void NpcInteractionSource_TimidNpcMovesToAdjacentRoomWhenSharingPlayerRoom()
         {
             var s = StartContract(seed: 41);
-            var npc = s.Npcs.GetByContract(s.CurrentContract.ContractId).First();
+            // 프롤로그 뒤 의뢰는 살인이라 첫 인물이 숨진 피해자일 수 있다 — 살아 있는 인물로 시험한다.
+            var npc = s.Npcs.GetByContract(s.CurrentContract.ContractId).First(n => n.IsAlive);
             npc.Personality = NpcPersonality.Timid;
             string sharedRoom = s.PlayerRoom;
             s.Occupancy.PlaceAt(npc.NpcId, sharedRoom);
@@ -199,7 +200,7 @@ namespace CaseFileOmission.Tests
         public void NpcInteractionSource_QuestionUsesRespondersKnownInfoAndRecordsExchange()
         {
             var s = StartContract(seed: 43);
-            var npcs = s.Npcs.GetByContract(s.CurrentContract.ContractId).Take(2).ToList();
+            var npcs = s.Npcs.GetByContract(s.CurrentContract.ContractId).Where(n => n.IsAlive).Take(2).ToList();
             var asker = npcs[0];
             var responder = npcs[1];
             asker.KnownInfoIds.Clear();

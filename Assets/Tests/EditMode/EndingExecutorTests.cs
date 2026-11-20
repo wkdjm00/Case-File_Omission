@@ -110,15 +110,17 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
-        public void Arrest_UsesHandlerPolice_WhenContractIsActive()
+        public void Arrest_WhenAnyLivingPoliceReaches100_EvenIfNotHandler()
         {
-            // 07 2026-11-09: 배정된 경찰의 의심도 100이 체포 조건이다.
+            // 07 2026-11-16 최종 확정(2026-11-09 "배정된 경찰" 규칙을 대체): 경찰 중 한 명이라도 의심도 100이면 즉시 체포.
             var suspicion = new PoliceSuspicionService();
             suspicion.ApplyBatch(PoliceRoster.PoliceB, "player", new[] { 100f });
             var evaluator = new GameEndEvaluator(suspicion, new OrganizationState());
 
-            Assert.AreEqual(GameEndingType.None, evaluator.EvaluateAutomaticEndings("player", new List<string>(), PoliceRoster.PoliceA));
+            Assert.AreEqual(GameEndingType.Arrest, evaluator.EvaluateAutomaticEndings("player", new List<string>(), PoliceRoster.PoliceA));
             Assert.AreEqual(GameEndingType.Arrest, evaluator.EvaluateAutomaticEndings("player", new List<string>(), PoliceRoster.PoliceB));
+            Assert.AreEqual(GameEndingType.None, evaluator.EvaluateAutomaticEndings("player", new List<string> { PoliceRoster.PoliceB }, PoliceRoster.PoliceA),
+                "사망한 경찰의 의심도는 세지 않는다");
         }
 
         [Test]

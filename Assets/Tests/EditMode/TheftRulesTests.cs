@@ -71,6 +71,25 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void WitnessInSameRoomAsHandler_ReportsTheftToPolice_Once()
+        {
+            var (s, m) = FindStealable((g, x) => true);
+            var witness = s.Npcs.GetByContract(s.CurrentContract.ContractId).First(n => n.IsAlive);
+            s.Occupancy.PlaceAt(witness.NpcId, s.PlayerRoom);
+            Assert.IsTrue(s.Steal(m.MaterialId).Success);
+            var incident = s.Campaign.TheftIncidents.Single(i => i.MaterialId == m.MaterialId);
+            Assume.That(incident.WitnessIds, Does.Contain(witness.NpcId));
+
+            // 목격자와 담당 경찰을 같은 방에 두고 시간을 보내면 신고가 전달된다.
+            string room = s.Rooms.GetAdjacentRooms(s.PlayerRoom).First();
+            s.Occupancy.PlaceAt(witness.NpcId, room);
+            s.Occupancy.PlaceAt(s.HandlerPoliceId, room);
+            s.PassTime(1);
+            Assert.That(incident.WitnessIds, Does.Contain(s.HandlerPoliceId));
+            Assert.AreEqual(1, incident.WitnessIds.Count(id => id == s.HandlerPoliceId), "같은 신고를 두 번 더하지 않는다");
+        }
+
+        [Test]
         public void DroppedClue_CanBePickedUpAgainInSameRoom()
         {
             var s = new GameSession(new GameSessionConfig { Random = new Random(7) });
@@ -82,6 +101,10 @@ namespace CaseFileOmission.Tests
             foreach (var r in s.Rooms.FindPath(s.PlayerRoom, obj.RoomId) ?? Array.Empty<string>()) s.MovePlayer(r);
             s.InvestigateObject(obj.ObjectId);
             Assume.That(s.Clues.Exists(obj.MaterialId));
+            // 같은 방 NPC는 떨어진 단서를 자동으로 줍는다(06: 3개 미만이면 획득) — 줍기 경로만 보려고 인물을 다른 방으로 옮긴다.
+            string other = s.Rooms.GetAdjacentRooms(s.PlayerRoom).First();
+            foreach (var n in s.Npcs.GetByContract(s.CurrentContract.ContractId).Where(n => s.Occupancy.HasPosition(n.NpcId) && s.Occupancy.GetRoom(n.NpcId) == s.PlayerRoom).ToList())
+                s.Occupancy.PlaceAt(n.NpcId, other);
 
             Assert.IsTrue(s.DropClue(obj.MaterialId).Success);
             CollectionAssert.Contains(s.DroppedCluesHere(), obj.MaterialId);

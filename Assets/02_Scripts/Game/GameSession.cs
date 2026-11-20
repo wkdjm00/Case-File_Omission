@@ -684,6 +684,27 @@ namespace CaseFileOmission.Game
         /// 부재 발견(06): 그 물건을 아는(그 자료의 사실을 보유한) 살아 있는 NPC가 그 방에 있으면 물건이 없어진 것을 알게 된다.
         /// '없어졌다'는 정보만 주고 범인은 확정하지 않는다. 같은 물건의 부수사건은 하나이며 발견자는 NPC별로 덧붙인다. 15분 턴마다 호출.
         /// </summary>
+        /// <summary>
+        /// NPC 신고(사용자 확정 2026-11-20 임시 효과): 플레이어의 절도·시신 탈취를 직접 본 NPC가 담당 경찰과 같은 방에 있으면 그 목격을 경찰에 전달한다.
+        /// 부수사건의 목격자 목록에 경찰을 더하고 이벤트로 남긴다(목격자·사건마다 한 번). 의심도 수치는 노션에 없어 바꾸지 않는다.
+        /// </summary>
+        private void ReportWitnessedCrimesToPolice()
+        {
+            string police = HandlerPoliceId;
+            if (CurrentContract == null || police == null || !PoliceLife.IsAlive(police) || !Occupancy.HasPosition(police)) return;
+            string room = Occupancy.GetRoom(police);
+            foreach (var incident in Campaign.TheftIncidents)
+            {
+                foreach (var witness in incident.WitnessIds.ToList())
+                {
+                    if (!Npcs.Exists(witness) || !Npcs.Get(witness).IsAlive || !Occupancy.HasPosition(witness) || Occupancy.GetRoom(witness) != room) continue;
+                    if (!State.EventLog.TryRecord(new GameEvent($"reported:{incident.IncidentId}:{witness}", GameEventType.Custom, CurrentContract.ContractId, police)))
+                        continue;
+                    if (!incident.WitnessIds.Contains(police)) incident.WitnessIds.Add(police);
+                }
+            }
+        }
+
         private void CheckTheftAbsence()
         {
             if (CurrentContract == null) return;
@@ -1212,15 +1233,14 @@ namespace CaseFileOmission.Game
             _carriedOverQuestions = new List<CardQuestion>();
 
             MeetingFlow = flow;
-            // 07·06 2026-11-13: 그 장소에 있는 생존 인물만 참가한다(실종자·사망자·미배치 인물 제외).
-            // 회의는 시작 시점에 실제 회의 장소(플레이어가 있는 방)에 있는 생존 인물만 확정한다.
-            // 사건 데이터에 등록되어 있거나 다른 방에 있다는 이유로 참가자를 자동 소환하지 않는다.
-            string meetingRoomId = PlayerRoom;
+            // 06 2026-11-13: 회의 시작 시점에 회의가 열린 장소에 실제로 있는 생존 인물 전원이 참가한다(실종자·사망자·미배치 인물 제외).
+            // 사용자 확정 2026-11-20: 회의는 카드게임이라 한 방에 모일 필요가 없다 — '장소'는 사건 주택(현장) 전체로 본다.
+            // 주택에 배치되지 않은 인물(실종 등)은 사건 데이터에 있어도 소환하지 않는다.
             foreach (var npc in Npcs.GetByContract(CurrentContract.ContractId)
-                         .Where(n => n.IsAlive && Occupancy.HasPosition(n.NpcId) && Occupancy.GetRoom(n.NpcId) == meetingRoomId))
+                         .Where(n => n.IsAlive && Occupancy.HasPosition(n.NpcId)))
                 MeetingFlow.AddParticipant(npc.NpcId, MeetingParticipantKind.Npc);
             foreach (var policeId in PoliceRoster.AllPoliceIds
-                         .Where(id => PoliceLife.IsAlive(id) && Occupancy.HasPosition(id) && Occupancy.GetRoom(id) == meetingRoomId))
+                         .Where(id => PoliceLife.IsAlive(id) && Occupancy.HasPosition(id)))
                 MeetingFlow.AddParticipant(policeId, MeetingParticipantKind.Police);
 
             MeetingFlow.ApplyConfirmedTurnOrder(_random);
@@ -1721,6 +1741,7 @@ namespace CaseFileOmission.Game
         private WorldStateTargets BuildSaveTargets() => new WorldStateTargets
         {
             CarriedOverQuestions = _carriedOverQuestions,
+            Meeting = Meeting, // 진행 중 회의(연속 카운터·처리 이벤트). 없으면 회의 중 저장이 조사 단계로 되돌아간다.
             MeetingFlow = MeetingFlow,
             MeetingResolver = MeetingResolver,
             ParticipantPresented = _participantPresented,
@@ -1978,6 +1999,7 @@ namespace CaseFileOmission.Game
                 var results = Planner.ExecuteTurn($"{CurrentContract.ContractId}-m{Campaign.NpcMinute}", CurrentContract.ContractId, Campaign.NpcMinute);
                 PolicePatrolTurn();
                 CheckTheftAbsence();
+                ReportWitnessedCrimesToPolice();
                 // 07 3-3: 추적 발동 다음 턴부터 경찰 정보 수집 단계(기존 조사 흐름 — 별도 미니게임 없음).
                 if (Pursuit.Stage == PursuitStage.Triggered)
                     Pursuit.AdvanceToGatheringInformation();

@@ -1310,11 +1310,27 @@ namespace CaseFileOmission.Playtest
         /// 담당 경찰과 대화. 경찰 대화의 규칙·대사가 기획에 없어 시간을 쓰지 않고 정보도 주지 않는다(TEST_TEMP).
         /// 기존 행동인 의뢰 포기 알림만 선택지로 둔다.
         /// </summary>
+        private void RequestMeetingFromPolice()
+        {
+            var s = Session;
+            if (!s.State.IsTimeBlockEnded)
+            {
+                var r = s.EndInvestigationEarly();
+                if (!r.Success) { Act(r); return; }
+            }
+            AfterStateChange();
+            if (s.State.CurrentPhase == GamePhase.Investigation && s.State.IsTimeBlockEnded && Current == View.Board)
+                GoMeeting();
+        }
+
         private void PoliceDialogue(string policeId)
         {
             var lines = new List<string> { "\"현장은 우리가 넘긴 개요 그대로요. 필요한 건 직접 확인하시오.\"" };
             var choices = new List<(string, Action)>
             {
+                // 사용자 확정 2026-11-20: 조사 시간이 남았을 때 회의를 하려면 담당 경찰에게 요청한다.
+                // 기존 '조사 종료' 규칙대로 시간대 끝까지 진행한 뒤 손패 고르기로 넘어간다.
+                ("회의를 열자고 한다 (조사 종료 → 회의)", RequestMeetingFromPolice),
                 ("의뢰 포기를 알린다 (조직 신뢰도 -2)", ConfirmAbandon),
                 ("대화를 마친다", null)
             };

@@ -70,12 +70,15 @@ namespace CaseFileOmission.ContractContent
 
             // 실제 사건 유형만 살인으로 보정한다. 경찰의 대표 분류는 별도 상태이므로 덮어쓰지 않는다.
             candidate.PrimaryCrimeType = CrimeType.Murder;
-            candidate.Truth.VictimDeparted = ContractGenerator.RequiresVictimDeparture(
-                candidate.RepresentativeCrimeType, CrimeType.Murder);
-            candidate.Truth.BodyHidden = ContractGenerator.RequiresHiddenBody(
-                candidate.RepresentativeCrimeType, CrimeType.Murder);
-            candidate.Truth.DelayedDeath = ContractGenerator.RequiresDelayedDeath(
-                candidate.RepresentativeCrimeType, CrimeType.Murder);
+            // 예외: 여러 피해자가 같은 핵심 사건에서 함께 숨져 시신이 현장에 남아야 하는 제약(3명 사망·부부/연인 사망)은
+            // 경찰 초기 정보에 모든 사망자가 나오므로 경찰 분류도 살인이다(지연 사망·시신 은닉 경위가 끼면 제약이 깨진다).
+            if (VictimCount > 1 || CoupleVictims)
+                candidate.RepresentativeCrimeType = CrimeType.Murder;
+            // 대표 분류가 따로 없으면(null) 경찰 분류는 실제 유형과 같다 — PoliceCrimeType이 그 규칙을 담는다.
+            var representative = candidate.PoliceCrimeType;
+            candidate.Truth.VictimDeparted = ContractGenerator.RequiresVictimDeparture(representative, CrimeType.Murder);
+            candidate.Truth.BodyHidden = ContractGenerator.RequiresHiddenBody(representative, CrimeType.Murder);
+            candidate.Truth.DelayedDeath = ContractGenerator.RequiresDelayedDeath(representative, CrimeType.Murder);
 
             if (candidate.Truth.BodyHidden)
                 candidate.Truth.CoverUp = CoverUpMethod.BodyConcealment;
