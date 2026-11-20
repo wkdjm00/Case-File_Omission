@@ -10,7 +10,7 @@ namespace CaseFileOmission.Core
     /// OpenAI-compatible Chat Completions transport for the existing AI-stage contract.
     /// Credentials and endpoint are read from environment variables, never stored in project files.
     /// </summary>
-    public sealed class OpenAiCompatibleAiContentProvider : IAiContentProviderWithRequestId
+    public sealed class OpenAiCompatibleAiContentProvider : IAiContentProvider, IAiContentProviderWithRequestId
     {
         public const string EndpointEnvironmentVariable = "CASEFILE_AI_ENDPOINT";
         public const string ApiKeyEnvironmentVariable = "CASEFILE_AI_API_KEY";
@@ -57,6 +57,13 @@ namespace CaseFileOmission.Core
             {
                 return null;
             }
+        }
+
+        public bool TryRequest(AiStage stage, string requestJson, out string responseJson)
+        {
+            var result = Request(stage, Guid.NewGuid().ToString("N"), requestJson);
+            responseJson = result?.Json;
+            return result != null && result.Failure == AiFailureKind.None && !string.IsNullOrWhiteSpace(responseJson);
         }
 
         public AiProviderResponse Request(AiStage stage, string requestId, string requestJson)
@@ -134,12 +141,18 @@ namespace CaseFileOmission.Core
 
         private static string NormalizeEndpoint(string endpoint)
         {
-            string value = endpoint.Trim().TrimEnd('/');
-            if (value.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
-                return value;
-            if (value.EndsWith("/v1", StringComparison.OrdinalIgnoreCase))
-                return value + "/chat/completions";
-            return value + "/v1/chat/completions";
+            if (!Uri.TryCreate(endpoint.Trim(), UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp))
+                throw new ArgumentException("AI endpoint must be an absolute HTTP(S) URL.", nameof(endpoint));
+
+            var builder = new UriBuilder(uri);
+            string path = builder.Path.TrimEnd('/');
+            if (path.EndsWith("/chat/completions", StringComparison.OrdinalIgnoreCase))
+                return builder.Uri.ToString();
+            builder.Path = path.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
+                ? path + "/chat/completions"
+                : path + "/v1/chat/completions";
+            return builder.Uri.ToString();
         }
 
         private static AiFailureKind ClassifyWebFailure(WebException exception)
