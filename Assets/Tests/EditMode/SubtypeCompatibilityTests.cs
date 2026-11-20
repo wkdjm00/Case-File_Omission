@@ -37,7 +37,37 @@ namespace CaseFileOmission.Tests
                 // 중복 판정 우선순위: 생존 후 사망 → MUR-02, 인계 시점 시신 미발견 → MUR-04.
                 if (c.Truth.DelayedDeath) Assert.AreEqual("ACT-SUB-MUR-02", c.Truth.ActualSubtypeId, where);
                 else if (c.Truth.BodyHidden) Assert.AreEqual("ACT-SUB-MUR-04", c.Truth.ActualSubtypeId, where);
-                Assert.AreNotEqual("ACT-SUB-ASS-02", c.Truth.ActualSubtypeId, "반복 공격 경위는 만들지 않는다");
+                if (c.Truth.ActualSubtypeId == "ACT-SUB-ASS-02")
+                {
+                    var attacks = built.Timeline.Events.Count(e =>
+                        (e.Kind == TimelineEventKind.CoreIncident || e.Kind == TimelineEventKind.Aftermath)
+                        && e.RoomId == built.Timeline.SceneRoomId
+                        && e.ParticipantIds.Contains(c.Truth.PerpetratorId)
+                        && e.ParticipantIds.Contains(c.Truth.VictimId));
+                    Assert.AreEqual(3, attacks, where);
+                }
+
+                if (c.PrimaryCrimeType == CrimeType.Missing)
+                {
+                    var expectedCircumstance = c.Truth.ActualSubtypeId switch
+                    {
+                        "ACT-SUB-MIS-01" => MissingPersonCircumstance.Resident,
+                        "ACT-SUB-MIS-02" => MissingPersonCircumstance.Visitor,
+                        "ACT-SUB-MIS-03" => MissingPersonCircumstance.ExpectedReturn,
+                        _ => MissingPersonCircumstance.LastContactUnknown
+                    };
+                    Assert.AreEqual(expectedCircumstance, c.Truth.MissingPersonCircumstance, where);
+                    if (c.Truth.RepresentativeSubtypeId == "REP-SUB-MIS-01")
+                        Assert.AreEqual(MissingPersonCircumstance.Resident, c.Truth.MissingPersonCircumstance, where);
+                    if (c.Truth.RepresentativeSubtypeId == "REP-SUB-MIS-02")
+                        Assert.AreEqual(MissingPersonCircumstance.Visitor, c.Truth.MissingPersonCircumstance, where);
+                    if (c.Truth.RepresentativeSubtypeId == "REP-SUB-MIS-03")
+                        Assert.AreEqual(MissingPersonCircumstance.ExpectedReturn, c.Truth.MissingPersonCircumstance, where);
+                }
+                else
+                {
+                    Assert.AreEqual(MissingPersonCircumstance.None, c.Truth.MissingPersonCircumstance, where);
+                }
 
                 // 경찰이 사망을 확인하지 못한 살인 분류는 사망을 확정적으로 말하는 패턴(MUR-01·02·03)을 쓰지 않는다.
                 if (c.PoliceCrimeType == CrimeType.Murder && c.PrimaryCrimeType != CrimeType.Murder)

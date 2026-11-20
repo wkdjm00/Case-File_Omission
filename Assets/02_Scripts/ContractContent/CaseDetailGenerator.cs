@@ -68,10 +68,19 @@ namespace CaseFileOmission.ContractContent
             // 대표 세부 패턴은 시간표가 정해진 뒤 경찰 초기 정보와 양립하는 후보 중에서 다시 고른다(ApplySubtypeToTimeline). 여기 값은 임시다.
             var rep = CaseCatalog.RepresentativeSubtypes[contract.PoliceCrimeType];
             truth.RepresentativeSubtypeId = rep[random.Next(rep.Length)].Id;
-            // 실제 세부 종류 중 진실·시간표가 정하는 것(MUR-02 생존 후 사망, MUR-04 시신 미발견, ASS-03 이동 뒤 확인)과
-            // 이 생성기가 만들지 않는 반복 공격(ASS-02)은 무작위 후보에서 뺀다. 나머지는 동일 가중치(04 2026-11-12).
+            // 실제 세부 종류 중 진실·시간표가 정하는 것만 무작위 후보에서 제외한다.
+            // 반복 공격(ASS-02)은 시간표 생성기가 연속 공격 경위를 구성하므로 선택할 수 있다.
             var act = CaseCatalog.ActualSubtypes[crime].Where(e => !TimelineDeterminedSubtypes.Contains(e.Id)).ToArray();
             truth.ActualSubtypeId = act[random.Next(act.Length)].Id;
+            truth.MissingPersonCircumstance = crime == CrimeType.Missing
+                ? truth.ActualSubtypeId switch
+                {
+                    "ACT-SUB-MIS-01" => MissingPersonCircumstance.Resident,
+                    "ACT-SUB-MIS-02" => MissingPersonCircumstance.Visitor,
+                    "ACT-SUB-MIS-03" => MissingPersonCircumstance.ExpectedReturn,
+                    _ => MissingPersonCircumstance.LastContactUnknown
+                }
+                : MissingPersonCircumstance.None;
 
             var date = new DateTime(1984, 10, 1).AddDays(random.Next(92));
             contract.IncidentDate = date.ToString("yyyy-MM-dd");
@@ -142,7 +151,10 @@ namespace CaseFileOmission.ContractContent
                 {
                     m.ObjectId = PickObject(m.RoomId, document: false);
                     m.Title = $"{CaseCatalog.ObjectName(m.ObjectId)} 주변의 흔적";
-                    m.Content = $"{CaseCatalog.ObjectName(m.ObjectId)} 주변에 {SceneNote(c.PrimaryCrimeType)} {time}경 이 방({Room(m.RoomId)})에서 일이 벌어진 것으로 보인다.";
+                    m.Content = $"{CaseCatalog.ObjectName(m.ObjectId)} 주변에 {SceneNote(c.PrimaryCrimeType)} {time}경 이 방({Room(m.RoomId)})에서 일이 벌어진 것으로 보인다."
+                                + (c.Truth.ActualSubtypeId == "ACT-SUB-ASS-02"
+                                    ? " 한 번의 충돌 흔적이 아니라 같은 위치와 주변에 반복된 공격 흔적이 남아 있어, 여러 차례 공격으로 상해가 누적됐을 가능성이 있다."
+                                    : "");
                 }
                 else if (m.MaterialId.Contains("witness-testimony"))
                 {
@@ -309,7 +321,7 @@ namespace CaseFileOmission.ContractContent
         /// <summary>무작위로 고르지 않고 진실·시간표로만 정해지는 실제 세부 종류(ASS-02는 반복 공격 경위를 만들지 않아 생성되지 않는다).</summary>
         private static readonly HashSet<string> TimelineDeterminedSubtypes = new HashSet<string>
         {
-            "ACT-SUB-MUR-02", "ACT-SUB-MUR-04", "ACT-SUB-ASS-02", "ACT-SUB-ASS-03"
+            "ACT-SUB-MUR-02", "ACT-SUB-MUR-04", "ACT-SUB-ASS-03"
         };
 
         /// <summary>
@@ -317,7 +329,7 @@ namespace CaseFileOmission.ContractContent
         /// 양립하는 후보 중에서 동일 가중치로 다시 고른다.
         /// - 살인: 생존 후 사망 MUR-02 → 인계 시점 시신 미발견 MUR-04 → 사망 장소와 발견 장소가 다르면 MUR-03 → 나머지 MUR-01.
         ///   MUR-03은 시신을 가해자가 사건 직후 머문 방(현장과 같으면 이웃 방)으로 옮겨 성립시킨다.
-        /// - 폭행: 반복 누적 ASS-02(이 생성기는 반복 공격을 만들지 않음) → 공간 이동 뒤 확인 ASS-03 → 그 외 ASS-01/ASS-04.
+        /// - 폭행: 반복 누적 ASS-02는 반복 공격 시간표를 검증하고 유지 → 공간 이동 뒤 확인 ASS-03 → 그 외 ASS-01/ASS-04.
         /// 시신 자료의 방을 바꾸고, 시신 위치는 <see cref="PlaceBody"/>가 시간표 적용 뒤에 맞춘다.
         /// </summary>
         public static void ApplySubtypeToTimeline(GeneratedContract built)
@@ -338,7 +350,6 @@ namespace CaseFileOmission.ContractContent
 
             if (c.Truth.DelayedDeath) c.Truth.ActualSubtypeId = "ACT-SUB-MUR-02";
             else if (c.Truth.BodyHidden) c.Truth.ActualSubtypeId = "ACT-SUB-MUR-04";
-            else if (c.Truth.VictimDeparted && c.PrimaryCrimeType == CrimeType.Missing) c.Truth.ActualSubtypeId = "ACT-SUB-MIS-01";
 
             if (c.PrimaryCrimeType == CrimeType.Murder && (c.Truth.ActualSubtypeId == "ACT-SUB-MUR-03" || c.Truth.BodyHidden || c.Truth.DelayedDeath))
             {
@@ -401,6 +412,14 @@ namespace CaseFileOmission.ContractContent
                 // 관련자 진술이 엇갈림: 서로 어긋나는 진술(거짓 알리바이)이 실제로 있다.
                 case "REP-SUB-ASS-04":
                     return built.Materials.Any(m => m.MaterialId.Contains("false-alibi"));
+                case "REP-SUB-MIS-01":
+                    return c.Truth.MissingPersonCircumstance == MissingPersonCircumstance.Resident;
+                case "REP-SUB-MIS-02":
+                    return c.Truth.MissingPersonCircumstance == MissingPersonCircumstance.Visitor;
+                case "REP-SUB-MIS-03":
+                    return c.Truth.MissingPersonCircumstance == MissingPersonCircumstance.ExpectedReturn;
+                case "REP-SUB-MIS-04":
+                    return c.Truth.MissingPersonCircumstance != MissingPersonCircumstance.None;
                 default:
                     return repSubtypeId != null && CaseCatalog.RepresentativeSubtypes[c.PoliceCrimeType].Any(e => e.Id == repSubtypeId);
             }
@@ -422,7 +441,13 @@ namespace CaseFileOmission.ContractContent
                 "ACT-SUB-MUR-02" => c.Truth.DelayedDeath,
                 "ACT-SUB-MUR-03" => !c.Truth.BodyHidden && body != null && body.RoomId != built.Timeline.SceneRoomId,
                 "ACT-SUB-MUR-04" => c.Truth.BodyHidden,
-                "ACT-SUB-ASS-02" => false, // 반복 공격 경위를 만들지 않는다.
+                "ACT-SUB-ASS-02" => built.Timeline.Events.Count(e =>
+                    (e.Kind == TimelineEventKind.CoreIncident || e.Kind == TimelineEventKind.Aftermath)
+                    && e.RoomId == built.Timeline.SceneRoomId
+                    && e.ParticipantIds.Contains(c.Truth.PerpetratorId)
+                    && e.ParticipantIds.Contains(c.Truth.VictimId)) >= 3
+                    && c.PrimaryCrimeType == CrimeType.AssaultInjury
+                    && !c.Truth.DelayedDeath,
                 "ACT-SUB-ASS-03" => VictimMovedAfterCore(built),
                 "ACT-SUB-ASS-01" or "ACT-SUB-ASS-04" => !VictimMovedAfterCore(built),
                 _ => true
@@ -505,7 +530,25 @@ namespace CaseFileOmission.ContractContent
                     break;
                 case CrimeType.Missing:
                     known.Add($"{victim}의 소재가 확인되지 않음.");
-                    basis = $"{victim}의 마지막 확인 이후 연락이 끊겨 실종으로 분류했다.";
+                    switch (c.Truth.MissingPersonCircumstance)
+                    {
+                        case MissingPersonCircumstance.Resident:
+                            known.Add($"{victim}은(는) 해당 주택의 거주자 또는 상시 체류 인물이다.");
+                            basis = $"{victim}의 거주 사실이 확인됐으나 현재 소재가 확인되지 않아 실종으로 분류했다.";
+                            break;
+                        case MissingPersonCircumstance.Visitor:
+                            known.Add($"{victim}은(는) 해당 주택을 방문한 인물이다.");
+                            basis = $"{victim}의 주택 방문은 확인됐으나 현재 소재가 확인되지 않아 실종으로 분류했다.";
+                            break;
+                        case MissingPersonCircumstance.ExpectedReturn:
+                            known.Add($"{victim}은(는) 정해진 시점에 돌아오기로 했으나 돌아오지 않았다.");
+                            basis = $"{victim}의 예정된 귀가가 이뤄지지 않아 실종으로 분류했다.";
+                            break;
+                        default:
+                            known.Add($"{victim}의 마지막 연락·목격 이후 현재 소재를 확인할 수 없다.");
+                            basis = $"{victim}의 마지막 연락·목격 이후 현재 소재를 확인할 수 없어 실종으로 분류했다.";
+                            break;
+                    }
                     if (actual == CrimeType.Murder) unknown.Add($"{victim}이(가) 이미 사망했다는 사실과 시신의 위치");
                     if (actual == CrimeType.AssaultInjury) unknown.Add($"{victim}이(가) 떠나기 전 실제로 공격받아 다쳤다는 사실");
                     if (actual == CrimeType.Blackmail) unknown.Add($"{victim}이(가) 협박을 피해 스스로 숨었다는 사실");

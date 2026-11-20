@@ -228,12 +228,15 @@ namespace CaseFileOmission.ContractContent
             }
 
             string scene = roomIds[_random.Next(roomIds.Count)];
-            int incidentSlot = _random.Next(2, slots - (hasCoverUp ? 3 : 2));
-            int coverUpSlot = hasCoverUp ? incidentSlot + 1 : -1;
+            bool repeatedAssault = crime == CrimeType.AssaultInjury && contract.Truth.ActualSubtypeId == "ACT-SUB-ASS-02";
+            int attackCount = repeatedAssault ? 3 : 1; // ASS-02: 처음 공격을 포함해 세 차례의 공격으로 누적 상해를 만든다.
+            int incidentUpperExclusive = slots - attackCount - (hasCoverUp ? 2 : 1);
+            int incidentSlot = _random.Next(2, incidentUpperExclusive);
+            int coverUpSlot = hasCoverUp ? incidentSlot + attackCount : -1;
 
             // 발견자: 사건 이후 현장에 갈 수 있는 생존 인물(가해자 제외, 사망·실종 피해자 제외).
             var discovererCandidates = cast
-                .Where(n => n.NpcId != perpId && !(n.NpcId == victimId && victimLeaves) && !extraVictims.Contains(n.NpcId))
+                .Where(n => n.NpcId != perpId && !(n.NpcId == victimId && (victimLeaves || repeatedAssault)) && !extraVictims.Contains(n.NpcId))
                 .ToList();
             if (discovererCandidates.Count == 0)
             {
@@ -241,7 +244,7 @@ namespace CaseFileOmission.ContractContent
                 return null;
             }
             var discoverer = discovererCandidates[_random.Next(discovererCandidates.Count)];
-            int firstDiscoverySlot = (hasCoverUp ? coverUpSlot : incidentSlot) + 1;
+            int firstDiscoverySlot = hasCoverUp ? coverUpSlot + 1 : incidentSlot + attackCount;
             int discoverySlot = _random.Next(firstDiscoverySlot, slots);
             // 자발적 이탈: 핵심 사건 뒤 피해자가 현관 홀을 거쳐 스스로 떠난다(이후 일정 없음).
             int departureSlot = departs ? _random.Next(firstDiscoverySlot, slots) : -1;
@@ -254,6 +257,15 @@ namespace CaseFileOmission.ContractContent
             required[perpId][incidentSlot] = scene;
             if (hasCoverUp) required[perpId][coverUpSlot] = scene;
             if (victimPresent) required[victimId][incidentSlot] = scene;
+            if (repeatedAssault)
+            {
+                for (int attackIndex = 1; attackIndex < attackCount; attackIndex++)
+                {
+                    int attackSlot = incidentSlot + attackIndex;
+                    required[perpId][attackSlot] = scene;
+                    required[victimId][attackSlot] = scene;
+                }
+            }
             foreach (var extra in extraVictims)
                 required[extra][incidentSlot] = scene;
             foreach (var witness in cast.Where(n => n.ActualRole == NpcActualRole.Witness))
@@ -264,9 +276,13 @@ namespace CaseFileOmission.ContractContent
 
             // 발견 이전에 현장에 들어온 인물이 있으면 그 사람이 먼저 발견한 셈이 되므로 막는다.
             var forbidden = cast.ToDictionary(n => n.NpcId, n => new Dictionary<int, string>());
-            foreach (var npc in cast.Where(n => n.NpcId != perpId && !((departs || delayed) && n.NpcId == victimId)))
+            foreach (var npc in cast.Where(n => n.NpcId != perpId
+                         && !((departs || delayed) && n.NpcId == victimId)))
             {
-                for (int s = (hasCoverUp ? coverUpSlot : incidentSlot) + 1; s < discoverySlot; s++)
+                int firstForbiddenSlot = (hasCoverUp ? coverUpSlot : incidentSlot) + 1;
+                if (repeatedAssault && npc.NpcId == victimId)
+                    firstForbiddenSlot = incidentSlot + attackCount;
+                for (int s = firstForbiddenSlot; s < discoverySlot; s++)
                     forbidden[npc.NpcId][s] = scene;
             }
 
@@ -312,18 +328,37 @@ namespace CaseFileOmission.ContractContent
             core.ParticipantIds.AddRange(extraVictims);
 
             TimelineEvent lastPerpEvent = core;
+            if (repeatedAssault)
+            {
+                // 각 추가 공격은 앞선 공격의 결과로 시간순 연결된다. 피해자는 모든 공격 동안 생존 상태로 남는다.
+                for (int attackIndex = 1; attackIndex < attackCount; attackIndex++)
+                {
+                    int attackSlot = incidentSlot + attackIndex;
+                    var attack = AddEvent(timeline, TimelineEventKind.Aftermath, M(attackSlot), M(attackSlot + 1), scene);
+                    attack.ParticipantIds.Add(perpId);
+                    attack.ParticipantIds.Add(victimId);
+                    attack.CauseEventIds.Add(lastPerpEvent.EventId);
+                    lastPerpEvent = attack;
+                }
+            }
+
             if (hasCoverUp)
             {
                 var cover = AddEvent(timeline, TimelineEventKind.CoverUp, M(coverUpSlot), M(coverUpSlot + 1), scene);
                 cover.ParticipantIds.Add(perpId);
-                cover.CauseEventIds.Add(core.EventId);
+                cover.CauseEventIds.Add(lastPerpEvent.EventId);
                 lastPerpEvent = cover;
             }
-            else if (incidentSlot + 1 < slots && walks[perpId][incidentSlot + 1] != scene)
+            else
             {
-                var after = AddEvent(timeline, TimelineEventKind.Aftermath, M(incidentSlot + 1), M(incidentSlot + 2), walks[perpId][incidentSlot + 1]);
-                after.ParticipantIds.Add(perpId);
-                after.CauseEventIds.Add(core.EventId);
+                int afterSlot = incidentSlot + attackCount;
+                if (afterSlot < discoverySlot && afterSlot + 1 < slots && walks[perpId][afterSlot] != scene)
+                {
+                    var after = AddEvent(timeline, TimelineEventKind.Aftermath, M(afterSlot), M(afterSlot + 1), walks[perpId][afterSlot]);
+                    after.ParticipantIds.Add(perpId);
+                    after.CauseEventIds.Add(lastPerpEvent.EventId);
+                    lastPerpEvent = after;
+                }
             }
 
             if (departs)

@@ -154,7 +154,7 @@ namespace CaseFileOmission.Playtest
             Ui.Button(body, "새 테스트 세션 시작", () =>
             {
                 _seed = int.TryParse(seed.text, out int v) ? v : DefaultSeed;
-                Session = new GameSession(new GameSessionConfig { RandomSeed = _seed });
+                Session = new GameSession(new GameSessionConfig { RandomSeed = _seed, AiProvider = OpenAiCompatibleAiContentProvider.CreateFromEnvironmentOrNull() });
                 Session.StartNewGame();
                 Session.CompletePrologue();
                 _resultShownFor = null;
@@ -165,7 +165,7 @@ namespace CaseFileOmission.Playtest
             Ui.Button(body, "고정 테스트 사건 TEST_TEMP_CASE_001 (폭행 신고 → 실종)", () =>
             {
                 _seed = ContractContent.TestFixtureCase001.Seed;
-                Session = new GameSession(new GameSessionConfig { Random = new System.Random(_seed) });
+                Session = new GameSession(new GameSessionConfig { Random = new System.Random(_seed), AiProvider = OpenAiCompatibleAiContentProvider.CreateFromEnvironmentOrNull() });
                 Session.StartNewGame();
                 Session.CompletePrologue();
                 Session.OfferFixture(ContractContent.TestFixtureCase001.Build(), Police.PoliceRoster.PoliceC);
@@ -877,7 +877,7 @@ namespace CaseFileOmission.Playtest
             try
             {
                 if (!Slots.TryRead(slot, out var data)) { Toast("불러오기 실패: 저장 파일이 없거나 손상되었습니다(백업도 실패)."); return; }
-                Session = GameSession.Load(data, new GameSessionConfig { Random = new System.Random(_seed + Environment.TickCount) });
+                Session = GameSession.Load(data, new GameSessionConfig { Random = new System.Random(_seed + Environment.TickCount), AiProvider = OpenAiCompatibleAiContentProvider.CreateFromEnvironmentOrNull() });
                 _resultShownFor = Session.LastContract?.ContractId;
                 _endingShown = Session.Endings.ExecutedEnding;
                 Toast(Session.Logger.Entries.Count > 0 ? $"불러왔습니다(복구 기록 {Session.Logger.Entries.Count}건 — F1에서 확인)." : "불러왔습니다.");
