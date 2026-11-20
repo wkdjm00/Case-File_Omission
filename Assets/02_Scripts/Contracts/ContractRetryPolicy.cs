@@ -12,7 +12,7 @@ namespace CaseFileOmission.Contracts
         }
     }
 
-    /// <summary>생성 결과. 10개 후보가 모두 실패해도 예외 대신 실패 결과를 돌려줄 때 쓴다.</summary>
+    /// <summary>생성 결과. 모든 후보가 실패해도 예외 대신 실패 결과를 돌려줄 때 쓴다.</summary>
     public sealed class ContractGenerationResult
     {
         public ContractInstance Contract;
@@ -43,7 +43,7 @@ namespace CaseFileOmission.Contracts
             ContractGenerator generator,
             IContractValidator validator,
             int maxAttemptsPerCandidate = 3,
-            int maxCandidates = 10,
+            int maxCandidates = 3,
             GameLogger logger = null)
         {
             _generator = generator ?? throw new ArgumentNullException(nameof(generator));
