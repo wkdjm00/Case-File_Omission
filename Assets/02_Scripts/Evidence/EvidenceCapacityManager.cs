@@ -70,7 +70,8 @@ namespace CaseFileOmission.Evidence
             string holderId,
             HolderType type,
             string newClueId,
-            Func<string, string, bool> shouldReplace = null)
+            Func<string, string, bool> shouldReplace = null,
+            Func<string, int> priority = null)
         {
             if (string.IsNullOrEmpty(holderId)) throw new ArgumentException("holderId는 비어 있을 수 없습니다.", nameof(holderId));
             if (string.IsNullOrEmpty(newClueId)) throw new ArgumentException("newClueId는 비어 있을 수 없습니다.", nameof(newClueId));
@@ -92,17 +93,33 @@ namespace CaseFileOmission.Evidence
             }
 
             // 06 §8 확정: 기본 NPC는 3개가 차면 추가로 획득하지 않고 지나가며 단서 교체를 판단하지 않는다.
-            // 교체는 경찰만 "새 단서가 더 중요하다고 판단할 때" 한다(판단 기준은 판단 유형별 — 호출자 콜백).
+            // 경찰은 새 자료가 기존 보유 자료보다 중요할 때만 교체한다. priority가 주어지면 보유 자료 중
+            // 우선도가 가장 낮은 자료를 비교 대상으로 삼고, 동률이면 먼저 보유한 자료를 유지한다.
             if (type == HolderType.Npc || shouldReplace == null)
                 return new EvidenceAcquisitionResult { Outcome = EvidenceAcquisitionOutcome.RejectedAtCapacity };
 
-            string oldest = list[0];
-            if (!shouldReplace(oldest, newClueId))
+            int replacementIndex = 0;
+            if (priority != null)
+            {
+                int lowestPriority = priority(list[0]);
+                for (int i = 1; i < list.Count; i++)
+                {
+                    int score = priority(list[i]);
+                    if (score < lowestPriority)
+                    {
+                        lowestPriority = score;
+                        replacementIndex = i;
+                    }
+                }
+            }
+
+            string replaced = list[replacementIndex];
+            if (!shouldReplace(replaced, newClueId))
                 return new EvidenceAcquisitionResult { Outcome = EvidenceAcquisitionOutcome.RejectedAtCapacity };
 
-            list.RemoveAt(0);
+            list.RemoveAt(replacementIndex);
             list.Add(newClueId);
-            return new EvidenceAcquisitionResult { Outcome = EvidenceAcquisitionOutcome.Replaced, ReplacedClueId = oldest };
+            return new EvidenceAcquisitionResult { Outcome = EvidenceAcquisitionOutcome.Replaced, ReplacedClueId = replaced };
         }
     }
 }
