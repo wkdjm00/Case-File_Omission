@@ -30,6 +30,7 @@ namespace CaseFileOmission.SaveLoad
         public NpcRegistry Npcs;
         public NpcRelationshipStore Relationships;
         public NpcInfoTransferService InfoTransfer;
+        public NpcBehaviorPlanner Planner;
 
         public MeetingSession Meeting;
         public MeetingFlow MeetingFlow;
@@ -819,7 +820,8 @@ namespace CaseFileOmission.SaveLoad
                 Npcs = Array.Empty<NpcStateDto>(),
                 Suspicion = Array.Empty<DirectionalValueDto>(),
                 Trust = Array.Empty<DirectionalValueDto>(),
-                Transfers = Array.Empty<InfoTransferDto>()
+                Transfers = Array.Empty<InfoTransferDto>(),
+                MovementState = t.Planner?.CaptureMovementState()
             };
 
             if (t.Npcs != null)

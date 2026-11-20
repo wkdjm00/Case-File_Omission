@@ -812,9 +812,11 @@ namespace CaseFileOmission.Game
 
             Campaign.PersuasionAttempted = true;
             var result = SpendTime(DefaultActionCost);
-            var persuasion = _persuasion.TryPersuade(npc, playerKnowsActualCulprit: true,
-                hasStrongSupportingEvidence, hasUnfavorableDirectEvidence,
-                Relationships.GetTrust(npcId, PlayerId) > 0f);
+            var persuasion = _persuasion.TryPersuade(npc,
+                playerKnowsActualCulprit: true,
+                hasStrongSupportingEvidence: hasStrongSupportingEvidence,
+                hasUnfavorableDirectEvidence: hasUnfavorableDirectEvidence,
+                targetAlreadyTrustsPlayer: Relationships.GetTrust(npcId, PlayerId) > 0f);
             if (persuasion.Success)
             {
                 foreach (var material in Materials.Where(m => m.SourceNpcId == npcId))
@@ -1647,6 +1649,11 @@ namespace CaseFileOmission.Game
             // 일정은 의뢰 ID·시간대 시각에서 재현 가능하게 다시 만든다(저장하지 않는다).
             if (session.CurrentContract != null)
                 session.ApplyBlockSchedules(placeAtScheduleStart: false);
+            // 막힌 이동 횟수와 보류 목적지는 일정과 별개인 진행 상태라 저장값을 복원한다.
+            var savedMovement = data?.World?.Npc?.MovementState;
+            if (savedMovement != null && !session.Planner.TryRestoreMovementState(savedMovement))
+                session.Logger.LogError("SAVE_INVALID_NPC_MOVEMENT_STATE", nameof(GameSession), session.State.CurrentPhase,
+                    "NPC 이동 막힘 상태가 현재 공간 구조와 맞지 않아 이동 막힘 기록을 초기화했습니다.", recoverable: true);
             // 불러온 뒤 새로 만드는 이벤트 ID가 저장된 이벤트와 겹치지 않게 한다.
             session._actionCounter = session.State.EventLog.GetOrdered().Count;
             return session;
@@ -1665,6 +1672,7 @@ namespace CaseFileOmission.Game
             Npcs = Npcs,
             Relationships = Relationships,
             InfoTransfer = InfoTransfer,
+            Planner = Planner,
             Reports = Reports,
             CaseBoards = CaseBoards,
             Opinions = Opinions,

@@ -231,6 +231,28 @@ namespace CaseFileOmission.NPC
         }
     }
 
+    [Serializable]
+    public sealed class NpcBlockedMoveState
+    {
+        public string NpcId;
+        public string TargetRoomId;
+        public int ConsecutiveBlockedTurns;
+    }
+
+    [Serializable]
+    public sealed class NpcSuspendedMoveState
+    {
+        public string NpcId;
+        public string TargetRoomId;
+    }
+
+    [Serializable]
+    public sealed class NpcBehaviorMovementState
+    {
+        public NpcBlockedMoveState[] BlockedMoves = Array.Empty<NpcBlockedMoveState>();
+        public NpcSuspendedMoveState[] SuspendedMoves = Array.Empty<NpcSuspendedMoveState>();
+    }
+
     public sealed class NpcBehaviorResult
     {
         public string NpcId;
@@ -333,6 +355,70 @@ namespace CaseFileOmission.NPC
         {
             if (source == null) throw new ArgumentNullException(nameof(source));
             _sources.Add(source);
+        }
+
+        /// <summary>저장 계약: 막힌 이동 횟수와 보류 목적지를 저장한다. 일정은 의뢰 ID·시간대에서 재현한다.</summary>
+        public NpcBehaviorMovementState CaptureMovementState()
+        {
+            return new NpcBehaviorMovementState
+            {
+                BlockedMoves = _blockedTurns
+                    .OrderBy(p => p.Key, StringComparer.Ordinal)
+                    .Where(p => _blockedTarget.ContainsKey(p.Key))
+                    .Select(p => new NpcBlockedMoveState
+                    {
+                        NpcId = p.Key,
+                        TargetRoomId = _blockedTarget[p.Key],
+                        ConsecutiveBlockedTurns = p.Value
+                    }).ToArray(),
+                SuspendedMoves = _suspendedMoveTarget
+                    .OrderBy(p => p.Key, StringComparer.Ordinal)
+                    .Select(p => new NpcSuspendedMoveState { NpcId = p.Key, TargetRoomId = p.Value })
+                    .ToArray()
+            };
+        }
+
+        /// <summary>
+        /// 저장된 이동 막힘 상태를 검증한 뒤 복원한다. 잘못된 항목이 하나라도 있으면 부분 적용하지 않는다.
+        /// 새 일정은 GameSession이 같은 의뢰 ID·시간대에서 재생성한 후 별도로 주입한다.
+        /// </summary>
+        public bool TryRestoreMovementState(NpcBehaviorMovementState snapshot)
+        {
+            if (snapshot == null || snapshot.BlockedMoves == null || snapshot.SuspendedMoves == null)
+                return false;
+
+            var rooms = new HashSet<string>(_rooms.AllRoomIds, StringComparer.Ordinal);
+            var blockedTurns = new Dictionary<string, int>(StringComparer.Ordinal);
+            var blockedTarget = new Dictionary<string, string>(StringComparer.Ordinal);
+            var suspendedTarget = new Dictionary<string, string>(StringComparer.Ordinal);
+
+            foreach (var item in snapshot.BlockedMoves)
+            {
+                if (item == null || string.IsNullOrEmpty(item.NpcId) || string.IsNullOrEmpty(item.TargetRoomId)
+                    || !_registry.Exists(item.NpcId) || !rooms.Contains(item.TargetRoomId)
+                    || item.ConsecutiveBlockedTurns < 1 || item.ConsecutiveBlockedTurns >= MaxBlockedWaitTurns
+                    || blockedTurns.ContainsKey(item.NpcId))
+                    return false;
+                blockedTurns.Add(item.NpcId, item.ConsecutiveBlockedTurns);
+                blockedTarget.Add(item.NpcId, item.TargetRoomId);
+            }
+
+            foreach (var item in snapshot.SuspendedMoves)
+            {
+                if (item == null || string.IsNullOrEmpty(item.NpcId) || string.IsNullOrEmpty(item.TargetRoomId)
+                    || !_registry.Exists(item.NpcId) || !rooms.Contains(item.TargetRoomId)
+                    || blockedTurns.ContainsKey(item.NpcId) || suspendedTarget.ContainsKey(item.NpcId))
+                    return false;
+                suspendedTarget.Add(item.NpcId, item.TargetRoomId);
+            }
+
+            _blockedTurns.Clear();
+            foreach (var item in blockedTurns) _blockedTurns.Add(item.Key, item.Value);
+            _blockedTarget.Clear();
+            foreach (var item in blockedTarget) _blockedTarget.Add(item.Key, item.Value);
+            _suspendedMoveTarget.Clear();
+            foreach (var item in suspendedTarget) _suspendedMoveTarget.Add(item.Key, item.Value);
+            return true;
         }
 
         /// <summary>의뢰의 모든 NPC가 이번 턴에 한 번씩 행동한다(ID 순서로 결정적 처리).</summary>

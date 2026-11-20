@@ -183,6 +183,37 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void BlockedMovementState_RoundTripsWithoutResettingTheCounter()
+        {
+            var s = new Scene();
+            s.AddNpc("npc-blocked", HouseLayoutFactory.Reception);
+            var schedule = new NpcSchedule("npc-blocked");
+            schedule.TryAdd(0, 120, HouseLayoutFactory.Bedroom);
+            s.Planner.SetSchedule(schedule);
+            s.Planner.IsRoomBlocked = room => room == HouseLayoutFactory.CorridorStairs;
+
+            Assert.AreEqual(NpcBehaviorStatus.BlockedWaiting, s.Planner.Act("t1", "npc-blocked", 0).Status);
+            var snapshot = s.Planner.CaptureMovementState();
+            Assert.AreEqual(1, snapshot.BlockedMoves.Single().ConsecutiveBlockedTurns);
+
+            var restored = new NpcBehaviorPlanner(s.Registry, s.Occupancy, s.Rooms, s.Transfer,
+                s.Relationships, s.Clues, s.Capacity, random: new FixedRandom(0));
+            restored.SetSchedule(schedule);
+            restored.IsRoomBlocked = room => room == HouseLayoutFactory.CorridorStairs;
+            Assert.IsTrue(restored.TryRestoreMovementState(snapshot));
+
+            Assert.AreEqual(NpcBehaviorStatus.BlockedWaiting, restored.Act("t2", "npc-blocked", 15).Status);
+            Assert.AreEqual(NpcBehaviorStatus.MoveSuspendedAfterBlocked, restored.Act("t3", "npc-blocked", 30).Status);
+            var suspended = restored.CaptureMovementState();
+            Assert.AreEqual("npc-blocked", suspended.SuspendedMoves.Single().NpcId);
+            Assert.AreEqual(HouseLayoutFactory.Bedroom, suspended.SuspendedMoves.Single().TargetRoomId);
+
+            restored.IsRoomBlocked = _ => false;
+            Assert.AreEqual(NpcBehaviorKind.MoveBySchedule, restored.Act("t4", "npc-blocked", 45).Kind);
+            Assert.AreEqual(HouseLayoutFactory.EntranceHall, s.Occupancy.GetRoom("npc-blocked"));
+        }
+
+        [Test]
         public void Schedule_OutsideAnyEntry_Waits()
         {
             var s = new Scene();

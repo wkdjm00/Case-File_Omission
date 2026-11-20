@@ -127,6 +127,7 @@ namespace CaseFileOmission.SaveLoad
         public DirectionalValueDto[] Suspicion;
         public DirectionalValueDto[] Trust;
         public InfoTransferDto[] Transfers;
+        public NpcBehaviorMovementState MovementState;
     }
 
     [Serializable]
@@ -472,7 +473,7 @@ namespace CaseFileOmission.SaveLoad
     [Serializable]
     public sealed class WorldSaveData
     {
-        public const int CurrentVersion = 4;
+        public const int CurrentVersion = 5;
 
         public int Version;
         public EvidenceSaveData Evidence;
