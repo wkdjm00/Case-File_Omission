@@ -277,9 +277,12 @@ namespace CaseFileOmission.ContractContent
             // 발견 이전에 현장에 들어온 인물이 있으면 그 사람이 먼저 발견한 셈이 되므로 막는다.
             var forbidden = cast.ToDictionary(n => n.NpcId, n => new Dictionary<int, string>());
             foreach (var npc in cast.Where(n => n.NpcId != perpId
-                         && !((departs || delayed || repeatedAssault) && n.NpcId == victimId)))
+                         && !((departs || delayed) && n.NpcId == victimId)))
             {
-                for (int s = (hasCoverUp ? coverUpSlot : incidentSlot) + 1; s < discoverySlot; s++)
+                int firstForbiddenSlot = (hasCoverUp ? coverUpSlot : incidentSlot) + 1;
+                if (repeatedAssault && npc.NpcId == victimId)
+                    firstForbiddenSlot = incidentSlot + attackCount;
+                for (int s = firstForbiddenSlot; s < discoverySlot; s++)
                     forbidden[npc.NpcId][s] = scene;
             }
 
