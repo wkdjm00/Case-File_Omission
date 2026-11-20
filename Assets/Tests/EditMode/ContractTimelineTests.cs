@@ -93,6 +93,31 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void AssaultSubtype02_CreatesThreeLinkedNonFatalAttackEvents()
+        {
+            var (contract, registry, rooms) = BuildCase(CrimeType.AssaultInjury);
+            contract.Truth.ActualSubtypeId = "ACT-SUB-ASS-02";
+
+            var result = new ContractTimelineGenerator(new Random(27)).Generate(contract, registry, rooms);
+
+            Assert.IsTrue(result.Success, string.Join(",", result.Errors));
+            var timeline = result.Timeline;
+            var attacks = timeline.Events.Where(e =>
+                    (e.Kind == TimelineEventKind.CoreIncident || e.Kind == TimelineEventKind.Aftermath)
+                    && e.RoomId == timeline.SceneRoomId
+                    && e.ParticipantIds.Contains(Perp)
+                    && e.ParticipantIds.Contains(Victim))
+                .OrderBy(e => e.StartMinute)
+                .ToList();
+
+            Assert.AreEqual(3, attacks.Count, "ACT-SUB-ASS-02는 최초 공격과 추가 공격 두 차례, 총 세 차례를 기록한다.");
+            Assert.AreEqual(attacks[0].EndMinute, attacks[1].StartMinute);
+            Assert.AreEqual(attacks[1].EndMinute, attacks[2].StartMinute);
+            Assert.IsNotNull(timeline.GetRoomAt(Victim, timeline.DayEndMinute - 1), "폭행 피해자는 살아 있어 사건 경위에 남는다.");
+            Assert.IsTrue(new ContractTimelineValidator().Validate(timeline, contract, registry, rooms).IsValid);
+        }
+
+        [Test]
         public void Theft_DoesNotForceVictimMeeting_AndVariesAcrossSeeds()
         {
             int withVictim = 0, withoutVictim = 0;
