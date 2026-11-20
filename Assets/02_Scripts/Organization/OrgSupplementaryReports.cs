@@ -7,6 +7,13 @@ namespace CaseFileOmission.Organization
     /// </summary>
     public static class OrgSupplementaryReports
     {
+        /// <summary>
+        /// 조직 보고서에서 참조할 수 있는 고정 설정 출처만 명시한다.
+        /// 임의의 ASCII 문자열을 고정 설정으로 취급해 존재하지 않는 출처를 통과시키지 않는다.
+        /// </summary>
+        public static bool IsKnownFixedDataSource(string sourceId) =>
+            sourceId == "EXPERIMENT_PRESSURE_V1" || sourceId == "CONTROL_COLLAR_V1";
+
         public static readonly OrgSupplementaryReportDefinition[] All =
         {
             new OrgSupplementaryReportDefinition
