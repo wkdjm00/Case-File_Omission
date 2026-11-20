@@ -333,7 +333,6 @@ namespace CaseFileOmission.Game
                     RelationshipId = "REL-01",
                     EarliestIncidentDate = "1984-10-19",
                     HolderIsVictim = true,
-                    DocumentHolderTag = "실제 실험 참가자·배포 안내문 보유자",
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Bedroom, "편지")
                 };
             }
@@ -349,7 +348,7 @@ namespace CaseFileOmission.Game
                     ToolId = "TOOL-05",
                     RelationshipId = "REL-06",
                     EarliestIncidentDate = "1984-10-01",
-                    DocumentHolderTag = "학교 학생 정보 요청·전달 및 후보 선정 서류 접근자",
+                    HolderIsVictim = true,
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
                 };
             }
@@ -365,7 +364,7 @@ namespace CaseFileOmission.Game
                     ToolId = "TOOL-01",
                     RelationshipId = "REL-05",
                     EarliestIncidentDate = "1984-11-20",
-                    DocumentHolderTag = "제한 열람 기록·이전 회차 생존자 인계 기록 접근자",
+                    HolderIsVictim = true,
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
                 };
             }
@@ -378,26 +377,43 @@ namespace CaseFileOmission.Game
             string Study(string obj) => CaseCatalog.ObjectId(HouseLayoutFactory.Study, obj);
             var plans = new[]
             {
-                (Name: MainCaseClueNames.ExperimentCompositionDealProposal, Date: "1984-10-21", ObjectId: Study("계약서")),
-                (Name: MainCaseClueNames.ProductPurchaseWishList, Date: "1984-10-29", ObjectId: Study("서류 더미")),
-                (Name: MainCaseClueNames.ProductSalesSettlement, Date: "1984-11-01", ObjectId: Study("장부")),
-                (Name: MainCaseClueNames.ViewingTicketRevenueSettlement, Date: "1984-11-01", ObjectId: Study("장부")),
-                (Name: MainCaseClueNames.GovernmentSupportRewardLetter, Date: "1984-11-04", ObjectId: CaseCatalog.ObjectId(HouseLayoutFactory.Bedroom, "편지")),
-                (Name: MainCaseClueNames.UpperClassHospitalityRecord, Date: "1984-11-11", ObjectId: Study("장부")),
-                (Name: MainCaseClueNames.ExperimentContinuationDecisionRecord, Date: "1984-11-14", ObjectId: Study("서류 더미")),
-                (Name: MainCaseClueNames.CollaboratorRewardDissenterPenaltyRecord, Date: "1984-11-15", ObjectId: Study("서류 더미")),
+                (Name: MainCaseClueNames.ExperimentCompositionDealProposal,
+                    HolderTag: "특별사업 협의 담당자·외부 제안자와의 거래/연락 자료 접근자",
+                    Date: "1984-10-21", ObjectId: Study("계약서")),
+                (Name: MainCaseClueNames.ProductPurchaseWishList,
+                    HolderTag: "민간 거래 대행인·개인 서류 관리",
+                    Date: "1984-10-29", ObjectId: Study("서류 더미")),
+                (Name: MainCaseClueNames.ProductSalesSettlement,
+                    HolderTag: "특별사업 상품 판매·회계 자료 접근/보관자",
+                    Date: "1984-11-01", ObjectId: Study("장부")),
+                (Name: MainCaseClueNames.ViewingTicketRevenueSettlement,
+                    HolderTag: "관람권·특별 접근권 발급/판매/정산 자료 접근자",
+                    Date: "1984-11-01", ObjectId: Study("장부")),
+                (Name: MainCaseClueNames.GovernmentSupportRewardLetter,
+                    HolderTag: "정부 지지 협조·개인적 혜택 수신자",
+                    Date: "1984-11-04", ObjectId: CaseCatalog.ObjectId(HouseLayoutFactory.Bedroom, "편지")),
+                (Name: MainCaseClueNames.UpperClassHospitalityRecord,
+                    HolderTag: "상류층 접대·후원 관계 기록 관리/열람자",
+                    Date: "1984-11-11", ObjectId: Study("장부")),
+                (Name: MainCaseClueNames.ExperimentContinuationDecisionRecord,
+                    HolderTag: "실험 운영 문제·기록 불일치 제한 열람 검토 기록 접근자",
+                    Date: "1984-11-14", ObjectId: Study("서류 더미")),
+                (Name: MainCaseClueNames.CollaboratorRewardDissenterPenaltyRecord,
+                    HolderTag: "협력·비협조에 따른 행정 조치 기록 관리/열람자",
+                    Date: "1984-11-15", ObjectId: Study("서류 더미")),
             };
 
-            // 개별 출현 조건이 미확정이므로 직업·관계·컴퓨터 조건을 임의로 붙이지 않는다.
-            // 아직 얻지 않은 기존 자료 중 하나를 선택하고, 문서 작성일 이후 사건의 기존 조사 오브젝트에 배치한다.
-            // 접근 NPC는 새로 만들지 않고 현재 사건 인물 중 한 명을 TEST_TEMP 자료 보관자로 기록한다.
+            // 03의 8개 자료는 고정 획득 순서를 갖지 않는다. 아직 미획득인 자료 중 하나를 먼저 선택하고,
+            // 문서 원문이 지정한 보유/접근 역할, 날짜 및 기존 주택 조사 오브젝트를 제약으로 전달한다.
+            // 특정 자료에 적혀 있지 않은 피해자 직업·범행 방법·도구·가해자 성격·대표 유형은 강제하지 않는다.
+            // 서류함은 별도 오브젝트 목록에 없으므로 개인 서류는 기존 서류 더미로 대체한다.
             var remaining = plans.Where(p => !MainCase.HasAcquired(p.Name)).ToArray();
             if (remaining.Length == 0) return null;
             var selected = remaining[_random.Next(remaining.Length)];
             return new ContractConstraints
             {
                 PlannedClueName = selected.Name,
-                DocumentHolderTag = "기존 자료 보관·열람자 (TEST_TEMP)",
+                DocumentHolderTag = selected.HolderTag,
                 EarliestIncidentDate = selected.Date,
                 DocumentObjectId = selected.ObjectId
             };
