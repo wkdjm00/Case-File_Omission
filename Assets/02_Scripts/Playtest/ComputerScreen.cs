@@ -207,10 +207,26 @@ namespace CaseFileOmission.Playtest
 
         private void OpenDoc(string id)
         {
-            if (id.StartsWith(OrgDocPrefix)) S.OrgSupplementary.MarkRead(id.Substring(OrgDocPrefix.Length));
-            if (_openDocIds.Contains(id)) return;
+            if (string.IsNullOrWhiteSpace(id) || _openDocIds.Contains(id)) return;
+
+            var read = S.ReadDocument(id);
+            if (!read.Success)
+            {
+                _message = PlaytestTexts.Failure(read.Failure);
+                Rebuild();
+                return;
+            }
+
+            if (id.StartsWith(OrgDocPrefix))
+                S.OrgSupplementary.MarkRead(id.Substring(OrgDocPrefix.Length));
+
             if (_openDocIds.Count >= 2) _openDocIds.RemoveAt(0);
             _openDocIds.Add(id);
+            _message = read.TimeSpent > 0 ? "새 자료를 확인해 1시간이 경과했습니다." : "";
+
+            // 첫 열람으로 세계 시각이 진행되었으면 NPC·경찰 상태와 HUD를 갱신하고 자동 저장한다.
+            _g.AfterStateChange(animatePieces: false);
+            if (S.IsGameOver) return;
             Rebuild();
         }
 

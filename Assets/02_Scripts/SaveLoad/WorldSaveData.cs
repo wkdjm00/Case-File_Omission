@@ -386,6 +386,7 @@ namespace CaseFileOmission.SaveLoad
         public int CompletedContractCount;
         public StageUnlockDto[] StageUnlocks;
         public string[] GeneratedMainDocuments;
+        public string[] ReadDocumentIds;
         public bool PendingOrgDeliveryCall;
         public OrgReportDto[] OrgReports;
         public string SceneRoomId;
@@ -475,7 +476,7 @@ namespace CaseFileOmission.SaveLoad
     [Serializable]
     public sealed class WorldSaveData
     {
-        public const int CurrentVersion = 6;
+        public const int CurrentVersion = 7;
 
         public int Version;
         public EvidenceSaveData Evidence;

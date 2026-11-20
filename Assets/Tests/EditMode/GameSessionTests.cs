@@ -147,6 +147,81 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void ReadDocument_FirstReadCostsOneHour_RereadIsFree_AndReadIdPersists()
+        {
+            var s = StartContract(seed: 31);
+            int startingBudget = s.State.RemainingTimeSlots;
+            int startingMinute = s.Campaign.NpcMinute;
+
+            var first = s.ReadDocument("DOC-test-read-once");
+            Assert.IsTrue(first.Success);
+            Assert.AreEqual(GameSession.ReadDocumentCost, first.TimeSpent);
+            Assert.AreEqual(startingBudget - GameSession.ReadDocumentCost, s.State.RemainingTimeSlots);
+            Assert.AreEqual(startingMinute + GameSession.ReadDocumentCost * GameSession.NpcMinutesPerTimeSlot, s.Campaign.NpcMinute);
+
+            int rereadBudget = s.State.RemainingTimeSlots;
+            int rereadMinute = s.Campaign.NpcMinute;
+            var reread = s.ReadDocument("DOC-test-read-once");
+            Assert.IsTrue(reread.Success);
+            Assert.AreEqual(0, reread.TimeSpent);
+            Assert.AreEqual(rereadBudget, s.State.RemainingTimeSlots);
+            Assert.AreEqual(rereadMinute, s.Campaign.NpcMinute);
+
+            string json = SaveLoad.SaveGameService.ToJson(s.CaptureSave());
+            var loaded = GameSession.Load(SaveLoad.SaveGameService.FromJson(json), new GameSessionConfig { Random = new Random(32) });
+            int loadedBudget = loaded.State.RemainingTimeSlots;
+            int loadedMinute = loaded.Campaign.NpcMinute;
+            var rereadAfterLoad = loaded.ReadDocument("DOC-test-read-once");
+            Assert.IsTrue(rereadAfterLoad.Success);
+            Assert.AreEqual(0, rereadAfterLoad.TimeSpent);
+            Assert.AreEqual(loadedBudget, loaded.State.RemainingTimeSlots);
+            Assert.AreEqual(loadedMinute, loaded.Campaign.NpcMinute);
+        }
+
+        [Test]
+        public void NpcInteractionSource_TimidNpcMovesToAdjacentRoomWhenSharingPlayerRoom()
+        {
+            var s = StartContract(seed: 41);
+            var npc = s.Npcs.GetByContract(s.CurrentContract.ContractId).First();
+            npc.Personality = NpcPersonality.Timid;
+            string sharedRoom = s.PlayerRoom;
+            s.Occupancy.PlaceAt(npc.NpcId, sharedRoom);
+
+            Assert.IsTrue(s.Rooms.GetAdjacentRooms(sharedRoom).Count > 0);
+            Assert.IsTrue(s.PassTime(1).Success);
+
+            string newRoom = s.Occupancy.GetRoom(npc.NpcId);
+            Assert.AreNotEqual(sharedRoom, newRoom);
+            Assert.IsTrue(s.Rooms.AreConnected(sharedRoom, newRoom), "회피는 인접한 방으로 한 칸 이동해야 한다.");
+        }
+
+        [Test]
+        public void NpcInteractionSource_QuestionUsesRespondersKnownInfoAndRecordsExchange()
+        {
+            var s = StartContract(seed: 43);
+            var npcs = s.Npcs.GetByContract(s.CurrentContract.ContractId).Take(2).ToList();
+            var asker = npcs[0];
+            var responder = npcs[1];
+            asker.KnownInfoIds.Clear();
+            asker.Beliefs.Clear();
+            responder.KnownInfoIds.Clear();
+            responder.Beliefs.Clear();
+            responder.LearnInfo("question-fact", NpcJudgement.Believe);
+            string room = s.PlayerRoom;
+            s.Occupancy.PlaceAt(asker.NpcId, room);
+            s.Occupancy.PlaceAt(responder.NpcId, room);
+
+            var source = new NpcInteractionBehaviorSource(s);
+            var candidate = source.GetCandidates(asker, room, s.Campaign.NpcMinute)
+                .FirstOrDefault(c => c.Kind == NpcBehaviorKind.Question && c.TargetId == responder.NpcId && c.InfoId == "question-fact");
+            Assert.IsNotNull(candidate, "같은 방의 상대가 알고 있지만 질문자가 모르는 사실은 질문 후보가 되어야 한다.");
+
+            candidate.Execute();
+
+            Assert.IsTrue(s.RecentExchanges.Any(e => e.SpeakerId == responder.NpcId && e.ListenerId == asker.NpcId && e.InfoId == "question-fact"));
+        }
+
+        [Test]
         public void StartMeeting_WithChosenHand_UsesExactlyTheChosenCards_AndRejectsUnheldOnes()
         {
             var s = StartContract();

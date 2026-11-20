@@ -64,7 +64,7 @@ namespace CaseFileOmission.Game
         public const int ObserveCost = 2;
         public const int OverhearCost = 2;
         public const int InvestigateCost = 4;
-        public const int ReadDocumentCost = 0;
+        public const int ReadDocumentCost = 4;
         public const int DropClueCost = 1;
         public const int DefaultActionCost = 4;
 
@@ -562,6 +562,33 @@ namespace CaseFileOmission.Game
         /// 지금 방의 조사 오브젝트 하나를 조사한다(06: 새 대상·물건 조사 1시간 = 4칸). 단서가 없을 수도 있다.
         /// 담당 경찰이 같은 방이면 새 단서마다 단서 확인 요청을 굴린다.
         /// </summary>
+        /// <summary>
+        /// 문서·자료 열람. 처음 확인하는 문서는 1시간(4칸), 이미 읽은 자료를 다시 여는 동작은 0칸이다.
+        /// 의뢰 사이처럼 시간 예산이 없는 구간의 첫 열람도 0칸으로 기록한다.
+        /// </summary>
+        public GameActionResult ReadDocument(string documentId)
+        {
+            if (string.IsNullOrWhiteSpace(documentId))
+                return GameActionResult.Fail(GameActionFailure.InvalidInput);
+
+            if (Campaign.ReadDocumentIds.Contains(documentId))
+                return GameActionResult.Ok();
+
+            if (CurrentContract == null)
+            {
+                Campaign.ReadDocumentIds.Add(documentId);
+                return GameActionResult.Ok();
+            }
+
+            var guard = GuardInvestigation(ReadDocumentCost);
+            if (!guard.Success)
+                return guard;
+
+            var result = SpendTime(ReadDocumentCost);
+            Campaign.ReadDocumentIds.Add(documentId);
+            return AfterAction(result);
+        }
+
         public GameActionResult InvestigateObject(string objectId)
         {
             var guard = GuardInvestigation(InvestigateCost);
@@ -1434,7 +1461,7 @@ namespace CaseFileOmission.Game
 
         /// <summary>
         /// 플레이어 차례를 끝낸다. 이번 차례에 카드를 하나도 내지 않았으면 차례 넘기기로 보고 각 판정자의 의심도를 올린다(06 확정 표).
-        /// NPC·경찰이 자기 차례에 어떤 카드를 낼지는 판단 규칙이 원문에 없어 그 차례는 넘긴다(임시, 의심도 변화 없음).
+        /// 이후 NPC·경찰은 개인 의견 60 이상인 최의심 대상에 대해 아는 자료를 최대 1장 제시하고, 조건에 맞는 자료가 없으면 넘긴다(2026-11-20 확정).
         /// </summary>
         public GameActionResult EndPlayerTurn()
         {
@@ -1883,6 +1910,7 @@ namespace CaseFileOmission.Game
             }
             Planner = new NpcBehaviorPlanner(Npcs, Occupancy, Rooms, InfoTransfer, Relationships, Clues, Capacity, random: _random);
             Planner.AddCandidateSource(new NpcSceneInvestigationSource(this));
+            Planner.AddCandidateSource(new NpcInteractionBehaviorSource(this));
         }
 
         /// <summary>

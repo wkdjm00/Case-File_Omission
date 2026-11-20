@@ -98,6 +98,9 @@ namespace CaseFileOmission.SaveLoad
         /// <summary>의뢰에 실제로 배치된 메인 사건 원본 자료 이름(조직 보조 자료의 "원본 자료의 실제 존재" 판정).</summary>
         public HashSet<string> GeneratedMainDocuments = new HashSet<string>();
 
+        /// <summary>한 번 이상 열람한 문서 ID. 새 문서는 1시간, 재열람은 0시간이다.</summary>
+        public HashSet<string> ReadDocumentIds = new HashSet<string>();
+
         /// <summary>조직 보조 자료가 전달된 뒤 아직 알리지 않은 전화 1회.</summary>
         public bool PendingOrgDeliveryCall;
 
@@ -420,6 +423,7 @@ namespace CaseFileOmission.SaveLoad
                 CompletedContractCount = t.Campaign?.CompletedContractCount ?? 0,
                 StageUnlocks = t.Campaign?.StageUnlockedAtCompleted.Select(p => new StageUnlockDto { Stage = p.Key, CompletedAt = p.Value }).ToArray() ?? Array.Empty<StageUnlockDto>(),
                 GeneratedMainDocuments = t.Campaign?.GeneratedMainDocuments.ToArray() ?? Array.Empty<string>(),
+                ReadDocumentIds = t.Campaign?.ReadDocumentIds.OrderBy(id => id, StringComparer.Ordinal).ToArray() ?? Array.Empty<string>(),
                 PendingOrgDeliveryCall = t.Campaign?.PendingOrgDeliveryCall ?? false,
                 OrgReports = t.OrgSupplementary?.States.Select(s => new OrgReportDto
                 {
@@ -518,7 +522,9 @@ namespace CaseFileOmission.SaveLoad
                 foreach (var u in d.StageUnlocks ?? Array.Empty<StageUnlockDto>())
                     if (u != null && !string.IsNullOrEmpty(u.Stage)) t.Campaign.StageUnlockedAtCompleted[u.Stage] = Math.Max(0, u.CompletedAt);
                 foreach (var doc in d.GeneratedMainDocuments ?? Array.Empty<string>())
-                    if (!string.IsNullOrEmpty(doc)) t.Campaign.GeneratedMainDocuments.Add(doc);
+                    if (!string.IsNullOrWhiteSpace(doc)) t.Campaign.GeneratedMainDocuments.Add(doc);
+                foreach (var id in d.ReadDocumentIds ?? Array.Empty<string>())
+                    if (!string.IsNullOrWhiteSpace(id)) t.Campaign.ReadDocumentIds.Add(id);
                 t.Campaign.PendingOrgDeliveryCall = d.PendingOrgDeliveryCall;
                 t.Campaign.SceneRoomId = d.SceneRoomId;
                 t.Campaign.NpcMinute = Math.Max(0, d.NpcMinute);

@@ -78,6 +78,7 @@ namespace CaseFileOmission.Playtest
                 _g.Log($"회의 시작 — 손패 {s.MeetingFlow.PlayerHand.Count}장, 대체 묶음 {s.MeetingFlow.PlayerReserve.Count}장");
                 _accused = s.Report?.GetSection(Reports.ReportSection.Perpetrator).ClaimedNpcId;
                 _message = "";
+                _g.SaveCheckpoint();
                 Rebuild();
             }, _chosen.Count == required, 52, Ui.AccentColor);
         }
@@ -255,8 +256,8 @@ namespace CaseFileOmission.Playtest
         }
 
         /// <summary>
-        /// 차례를 넘긴 뒤 다른 참가자들이 자기 차례에 하는 발언(!). NPC·경찰 차례의 카드 선택 규칙이 원문에 없어 카드는 내지 않고,
-        /// 07 「개인 의견 점수 구간별 행동·대사 표현(1-1)」에 따라 가장 의심하는 인물에 대한 태도만 말한다.
+        /// 플레이어가 차례를 넘긴 뒤 다른 참가자의 카드 제시·넘김 결과를 보여 준다(!).
+        /// 카드 선택·판정은 GameSession.TryParticipantCardPlay에서 처리하며 이 메서드는 결과만 표시한다.
         /// </summary>
         private List<(string, string)> TurnStatements()
         {
@@ -304,6 +305,7 @@ namespace CaseFileOmission.Playtest
             _message = $"결론 판정: 찬성 {result.AcceptCount} · 반대 {result.RejectCount} → {OutcomeName(result.Outcome)}";
             _g.Log(_message);
             if (s.State.CurrentPhase != GamePhase.Meeting) { Ui.Clear(_g.WindowLayer); _g.AfterStateChange(); return; }
+            _g.SaveCheckpoint();
             Rebuild();
         }
 
@@ -316,6 +318,7 @@ namespace CaseFileOmission.Playtest
                 _g.AfterStateChange();
                 return;
             }
+            if (result.Success) _g.SaveCheckpoint();
             _g.RefreshHud();
             Rebuild();
         }

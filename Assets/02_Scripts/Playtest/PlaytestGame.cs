@@ -828,6 +828,9 @@ namespace CaseFileOmission.Playtest
         /// 자동 저장(06): 새 게임, 플레이어 행동과 시간/NPC 갱신, 회의 반응·의문 처리,
         /// 의뢰 정산, 메인 서사 선택·엔딩 전환이 안정 상태로 확정된 직후 호출한다.
         /// </summary>
+        /// <summary>화면 외부에서 동기 행동이 완료된 안정 경계에 자동 저장한다(문서 열람·회의 등).</summary>
+        public void SaveCheckpoint() => AutoSave();
+
         private void AutoSave()
         {
             if (Session == null || !Session.CanSave) return;
