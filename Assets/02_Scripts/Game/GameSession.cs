@@ -275,6 +275,9 @@ namespace CaseFileOmission.Game
         /// 관리표(쪽지 뒤 의뢰 2건·25%·조직 전달)와 대상자 번호 파일(컴퓨터·비밀번호)은 사건 조건 단서가 아니라 여기서 배치하지 않는다.
         /// 고르는 순서는 원문에 없어 단서표 순서를 쓴다(임시).
         /// </summary>
+        /// <summary>여러 피해자 조건(2~3명) 단서를 이번 의뢰에 붙일 확률(%). 사용자 지정 "가끔" — 정확한 수치는 TEST_TEMP.</summary>
+        public const float MultiVictimContractChance = 20f;
+
         public ContractConstraints PlanMainCaseConstraints()
         {
             if (MainCase.CurrentStage == MainCaseTruthStage.PowerTruth) return PlanPowerTruthConstraints();
@@ -283,7 +286,9 @@ namespace CaseFileOmission.Game
             var rules = _mainCaseRules;
             bool Missing(string name) => !MainCase.HasAcquired(name);
 
-            if (Missing(MainCaseClueNames.GovernmentDepartmentContactLog))
+            // 사용자 지정 2026-11-20: 의뢰 시작 피해자는 대부분 1명, 2~3명은 가끔(최대 3명). 여러 피해자 조건 단서는 이번 의뢰에 붙일지 굴려서 정한다.
+            bool allowMultiVictim = _random.NextDouble() * 100.0 < MultiVictimContractChance;
+            if (allowMultiVictim && Missing(MainCaseClueNames.GovernmentDepartmentContactLog))
                 return new ContractConstraints { PlannedClueName = MainCaseClueNames.GovernmentDepartmentContactLog, RequireMurder = true, VictimCount = rules.MinimumVictimCountForContactLog };
             if (Missing(MainCaseClueNames.ResultReportRecording) || Missing(MainCaseClueNames.ParticipantRosterDeliveryConfirmation))
                 return new ContractConstraints
@@ -296,7 +301,7 @@ namespace CaseFileOmission.Game
                 };
             if (Missing(MainCaseClueNames.SeniorOfficialLetter))
                 return new ContractConstraints { PlannedClueName = MainCaseClueNames.SeniorOfficialLetter, PerpetratorPersonality = rules.DesireTrait };
-            if (Missing(MainCaseClueNames.NumberNoteLeftForLover))
+            if (allowMultiVictim && Missing(MainCaseClueNames.NumberNoteLeftForLover))
                 return new ContractConstraints { PlannedClueName = MainCaseClueNames.NumberNoteLeftForLover, RequireMurder = true, CoupleVictims = true };
             // 03 최신 조건: 피해자 직업 기자 + 실제 살인 + METHOD-04 총기 공격 + TOOL-03 총기 + REL-06 업무상 이해관계.
             // 원문은 오래된 봉투로만 지정하고 특정 방 ID를 고정하지 않는다. 봉투는 주택 8공간 중 기존 오브젝트인 서재 봉투를 사용한다.

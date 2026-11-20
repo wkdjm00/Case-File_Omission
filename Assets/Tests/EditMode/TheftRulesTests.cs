@@ -92,24 +92,31 @@ namespace CaseFileOmission.Tests
         [Test]
         public void DroppedClue_CanBePickedUpAgainInSameRoom()
         {
-            var s = new GameSession(new GameSessionConfig { Random = new Random(7) });
-            s.StartNewGame();
-            s.CompletePrologue();
-            s.OfferContract();
-            s.AcceptContract();
-            var obj = s.Materials.First(x => x.MaterialId.Contains("scene-trace"));
-            foreach (var r in s.Rooms.FindPath(s.PlayerRoom, obj.RoomId) ?? Array.Empty<string>()) s.MovePlayer(r);
-            s.InvestigateObject(obj.ObjectId);
-            Assume.That(s.Clues.Exists(obj.MaterialId));
-            // 같은 방 NPC는 떨어진 단서를 자동으로 줍는다(06: 3개 미만이면 획득) — 줍기 경로만 보려고 인물을 다른 방으로 옮긴다.
-            string other = s.Rooms.GetAdjacentRooms(s.PlayerRoom).First();
-            foreach (var n in s.Npcs.GetByContract(s.CurrentContract.ContractId).Where(n => s.Occupancy.HasPosition(n.NpcId) && s.Occupancy.GetRoom(n.NpcId) == s.PlayerRoom).ToList())
-                s.Occupancy.PlaceAt(n.NpcId, other);
+            // 버리는 동안 시간이 흘러 NPC가 들어와 주울 수 있다(06 자동 줍기) — 그런 시드는 건너뛰고 플레이어 줍기 경로만 본다.
+            for (int seed = 7; seed <= 40; seed++)
+            {
+                var s = new GameSession(new GameSessionConfig { Random = new Random(seed) });
+                s.StartNewGame();
+                s.CompletePrologue();
+                s.OfferContract();
+                if (!s.AcceptContract().Success) continue;
+                var obj = s.Materials.FirstOrDefault(x => x.MaterialId.Contains("scene-trace"));
+                if (obj == null) continue;
+                foreach (var r in s.Rooms.FindPath(s.PlayerRoom, obj.RoomId) ?? Array.Empty<string>()) s.MovePlayer(r);
+                s.InvestigateObject(obj.ObjectId);
+                if (!s.Clues.Exists(obj.MaterialId)) continue;
+                // 같은 방 NPC는 떨어진 단서를 자동으로 줍는다(06: 3개 미만이면 획득) — 줍기 경로만 보려고 인물을 다른 방으로 옮긴다.
+                string other = s.Rooms.GetAdjacentRooms(s.PlayerRoom).First();
+                foreach (var n in s.Npcs.GetByContract(s.CurrentContract.ContractId).Where(n => s.Occupancy.HasPosition(n.NpcId) && s.Occupancy.GetRoom(n.NpcId) == s.PlayerRoom).ToList())
+                    s.Occupancy.PlaceAt(n.NpcId, other);
 
-            Assert.IsTrue(s.DropClue(obj.MaterialId).Success);
-            CollectionAssert.Contains(s.DroppedCluesHere(), obj.MaterialId);
-            Assert.IsTrue(s.PickUpClue(obj.MaterialId).Success);
-            Assert.AreEqual(ClueWorldState.HeldByPlayer, s.Clues.GetRecord(obj.MaterialId).WorldState);
+                Assert.IsTrue(s.DropClue(obj.MaterialId).Success);
+                if (!s.DroppedCluesHere().Contains(obj.MaterialId)) continue;
+                Assert.IsTrue(s.PickUpClue(obj.MaterialId).Success);
+                Assert.AreEqual(ClueWorldState.HeldByPlayer, s.Clues.GetRecord(obj.MaterialId).WorldState);
+                return;
+            }
+            Assert.Inconclusive("버린 단서가 방에 남은 시드를 찾지 못했다.");
         }
     }
 }

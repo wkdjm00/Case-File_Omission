@@ -83,14 +83,19 @@ namespace CaseFileOmission.Tests
         [Test]
         public void Session_InSystemicStage_PlansContactLogCase_AndSceneInvestigationYieldsIt()
         {
-            var s = new GameSession(new GameSessionConfig { Random = new Random(11) });
-            s.StartNewGame();
-            s.CompletePrologue();
-            Assert.AreEqual(MainCaseTruthStage.SystemicTruth, s.MainCase.CurrentStage, "프롤로그 자료로 1단계를 마친다(가족 통지 기록은 임시 지급)");
-
-            var offer = s.OfferContract();
-            Assert.IsNotNull(offer);
-            Assert.AreEqual(MainCaseClueNames.GovernmentDepartmentContactLog, offer.Contract.PlannedMainCaseClue);
+            // 여러 피해자 조건 단서는 의뢰마다 가끔만 붙는다(사용자 지정 2026-11-20) — 연락 기록이 계획된 의뢰가 나오는 시드를 찾는다.
+            GameSession s = null;
+            CaseFileOmission.ContractContent.GeneratedContract offer = null;
+            for (int seed = 1; seed <= 60 && offer == null; seed++)
+            {
+                s = new GameSession(new GameSessionConfig { Random = new Random(seed) });
+                s.StartNewGame();
+                s.CompletePrologue();
+                Assert.AreEqual(MainCaseTruthStage.SystemicTruth, s.MainCase.CurrentStage, "프롤로그 자료로 1단계를 마친다(가족 통지 기록은 임시 지급)");
+                var o = s.OfferContract();
+                if (o != null && o.Contract.PlannedMainCaseClue == MainCaseClueNames.GovernmentDepartmentContactLog) offer = o;
+            }
+            Assume.That(offer, Is.Not.Null, "연락 기록 의뢰가 계획된 시드를 찾지 못했다");
             Assert.AreEqual(2, offer.Contract.Truth.AdditionalVictimIds.Count);
             Assert.IsTrue(s.AcceptContract().Success);
 
