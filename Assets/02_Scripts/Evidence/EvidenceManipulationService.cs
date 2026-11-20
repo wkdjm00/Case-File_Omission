@@ -43,8 +43,8 @@ namespace CaseFileOmission.Evidence
 
         /// <summary>
         /// 카드를 플레이어 쪽으로 끌어와 은폐한다. 대체 카드는 actorHeldClueIds(자신의 단서 묶음)에서
-        /// 은폐 대상을 제외하고 무작위로 선택한다. 대체할 다른 단서가 전혀 없는 경우의 처리 방식은
-        /// 문서에 명시되지 않았으므로 임의로 정하지 않고 예외로 알린다.
+        /// 은폐 대상을 제외하고 무작위로 선택한다. 06 확정: 묶음에 카드가 남아 있을 때만 보충하므로, 대체할 단서가 없으면
+        /// 대체 없이 은폐만 기록한다(DisplayedClueId null).
         /// </summary>
         public ManipulationRecord Conceal(string clueId, string actorId, IReadOnlyList<string> actorHeldClueIds)
         {
@@ -54,13 +54,7 @@ namespace CaseFileOmission.Evidence
                 throw new ArgumentNullException(nameof(actorHeldClueIds));
 
             var candidates = actorHeldClueIds.Where(id => id != clueId).ToList();
-            if (candidates.Count == 0)
-            {
-                throw new InvalidOperationException(
-                    "은폐할 때 대체할 다른 단서가 없습니다. 이 상황의 처리 방식은 문서에 확정되어 있지 않습니다.");
-            }
-
-            string substituteId = candidates[_random.Next(candidates.Count)];
+            string substituteId = candidates.Count == 0 ? null : candidates[_random.Next(candidates.Count)];
             var record = new ManipulationRecord(clueId, ManipulationType.Conceal, actorId, substituteId);
             _history.Add(record);
             return record;

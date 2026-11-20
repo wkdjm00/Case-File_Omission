@@ -65,9 +65,12 @@ namespace CaseFileOmission.ContractContent
             truth.PrimaryMotive = CaseCatalog.Name(CaseCatalog.Motives, truth.MotiveId);
             truth.RelationshipType = CaseCatalog.Name(CaseCatalog.Relationships, truth.RelationshipId);
 
+            // 대표 세부 패턴은 시간표가 정해진 뒤 경찰 초기 정보와 양립하는 후보 중에서 다시 고른다(ApplySubtypeToTimeline). 여기 값은 임시다.
             var rep = CaseCatalog.RepresentativeSubtypes[contract.PoliceCrimeType];
             truth.RepresentativeSubtypeId = rep[random.Next(rep.Length)].Id;
-            var act = CaseCatalog.ActualSubtypes[crime];
+            // 실제 세부 종류 중 진실·시간표가 정하는 것(MUR-02 생존 후 사망, MUR-04 시신 미발견, ASS-03 이동 뒤 확인)과
+            // 이 생성기가 만들지 않는 반복 공격(ASS-02)은 무작위 후보에서 뺀다. 나머지는 동일 가중치(04 2026-11-12).
+            var act = CaseCatalog.ActualSubtypes[crime].Where(e => !TimelineDeterminedSubtypes.Contains(e.Id)).ToArray();
             truth.ActualSubtypeId = act[random.Next(act.Length)].Id;
 
             var date = new DateTime(1984, 10, 1).AddDays(random.Next(92));
@@ -303,10 +306,18 @@ namespace CaseFileOmission.ContractContent
             }
         }
 
+        /// <summary>무작위로 고르지 않고 진실·시간표로만 정해지는 실제 세부 종류(ASS-02는 반복 공격 경위를 만들지 않아 생성되지 않는다).</summary>
+        private static readonly HashSet<string> TimelineDeterminedSubtypes = new HashSet<string>
+        {
+            "ACT-SUB-MUR-02", "ACT-SUB-MUR-04", "ACT-SUB-ASS-02", "ACT-SUB-ASS-03"
+        };
+
         /// <summary>
-        /// 시간표가 정해진 뒤 실제 세부 종류의 성립 기준을 맞춘다(04 중복 판정 규칙).
-        /// - 살인 ACT-SUB-MUR-03: 시신을 가해자가 사건 직후 머문 방(현장과 같으면 이웃 방)으로 옮긴다 — 사망 장소 ≠ 발견 장소.
-        /// - 폭행 ACT-SUB-ASS-03: 피해자가 사건 직후 다른 방으로 이동했을 때만. 아니면 ASS-01(즉시 확인)로 둔다.
+        /// 시간표가 정해진 뒤 실제 세부 종류의 성립 기준을 맞추고(04 2026-11-12 중복 판정 우선순위), 대표 세부 패턴을 경찰 초기 정보와
+        /// 양립하는 후보 중에서 동일 가중치로 다시 고른다.
+        /// - 살인: 생존 후 사망 MUR-02 → 인계 시점 시신 미발견 MUR-04 → 사망 장소와 발견 장소가 다르면 MUR-03 → 나머지 MUR-01.
+        ///   MUR-03은 시신을 가해자가 사건 직후 머문 방(현장과 같으면 이웃 방)으로 옮겨 성립시킨다.
+        /// - 폭행: 반복 누적 ASS-02(이 생성기는 반복 공격을 만들지 않음) → 공간 이동 뒤 확인 ASS-03 → 그 외 ASS-01/ASS-04.
         /// 시신 자료의 방을 바꾸고, 시신 위치는 <see cref="PlaceBody"/>가 시간표 적용 뒤에 맞춘다.
         /// </summary>
         public static void ApplySubtypeToTimeline(GeneratedContract built)
@@ -318,14 +329,15 @@ namespace CaseFileOmission.ContractContent
 
             if (c.PrimaryCrimeType == CrimeType.AssaultInjury)
             {
-                string after = t.GetRoomAt(c.Truth.VictimId, core.EndMinute);
-                bool moved = after != null && after != t.SceneRoomId;
-                if (moved) c.Truth.ActualSubtypeId = "ACT-SUB-ASS-03";
+                if (VictimMovedAfterCore(built)) c.Truth.ActualSubtypeId = "ACT-SUB-ASS-03";
                 else if (c.Truth.ActualSubtypeId == "ACT-SUB-ASS-03") c.Truth.ActualSubtypeId = "ACT-SUB-ASS-01";
             }
 
-            if (c.Truth.BodyHidden) c.Truth.ActualSubtypeId = "ACT-SUB-MUR-04";
-            else if (c.Truth.DelayedDeath) c.Truth.ActualSubtypeId = "ACT-SUB-MUR-02";
+            // 여러 피해자가 함께 숨진 사건(03 메인 단서 제약)은 모든 시신이 현장에 남으므로 시신 이동(MUR-03)이 성립하지 않는다.
+            if (c.Truth.ActualSubtypeId == "ACT-SUB-MUR-03" && c.Truth.AdditionalVictimIds.Count > 0) c.Truth.ActualSubtypeId = "ACT-SUB-MUR-01";
+
+            if (c.Truth.DelayedDeath) c.Truth.ActualSubtypeId = "ACT-SUB-MUR-02";
+            else if (c.Truth.BodyHidden) c.Truth.ActualSubtypeId = "ACT-SUB-MUR-04";
             else if (c.Truth.VictimDeparted && c.PrimaryCrimeType == CrimeType.Missing) c.Truth.ActualSubtypeId = "ACT-SUB-MIS-01";
 
             if (c.PrimaryCrimeType == CrimeType.Murder && (c.Truth.ActualSubtypeId == "ACT-SUB-MUR-03" || c.Truth.BodyHidden || c.Truth.DelayedDeath))
@@ -338,6 +350,84 @@ namespace CaseFileOmission.ContractContent
                     room = built.Rooms.GetAdjacentRooms(t.SceneRoomId).OrderBy(r => r, StringComparer.Ordinal).First();
                 if (body != null) body.RoomId = room;
             }
+
+            // 대표 세부 패턴: 양립하는 후보 중 동일 가중치. 공용 난수 흐름을 바꾸지 않게 의뢰 ID로 만든 난수를 쓴다(같은 의뢰 → 같은 결과).
+            var compatible = CaseCatalog.RepresentativeSubtypes[c.PoliceCrimeType].Where(e => IsRepresentativeSubtypeCompatible(built, e.Id)).ToList();
+            // 양립 후보가 없으면 그대로 두고 ValidateSubtypes에서 후보를 폐기한다(억지 서술을 붙이지 않음).
+            if (compatible.Count > 0)
+                c.Truth.RepresentativeSubtypeId = compatible[new Random(StableHash(c.ContractId + ":rep-sub")).Next(compatible.Count)].Id;
+        }
+
+        private static bool VictimMovedAfterCore(GeneratedContract built)
+        {
+            var t = built.Timeline;
+            string after = t.CoreIncident == null ? null : t.GetRoomAt(built.Contract.Truth.VictimId, t.CoreIncident.EndMinute);
+            return after != null && after != t.SceneRoomId;
+        }
+
+        /// <summary>인계 시점에 경찰이 사망을 확인했는가(시신 미발견·생존 후 사망·실제 사망 없음이면 아니다).</summary>
+        private static bool PoliceConfirmedDeath(ContractInstance c) =>
+            c.PrimaryCrimeType == CrimeType.Murder && !c.Truth.BodyHidden && !c.Truth.DelayedDeath;
+
+        /// <summary>
+        /// 04 2026-11-12 대표 세부 패턴 성립 조건: 경찰이 인계 시점에 실제로 확보한 정보로만 설명되는가.
+        /// 초기 정보에 없는 사망·부상을 확정적으로 말하는 패턴은 허용하지 않는다.
+        /// 실종(거주자·방문자·귀가 예정자)·절도·협박 패턴은 그 구분에 쓸 인물·물품 데이터가 생성기에 없어 모두 양립으로 본다(미정 — 인수인계 문서 기록).
+        /// </summary>
+        public static bool IsRepresentativeSubtypeCompatible(GeneratedContract built, string repSubtypeId)
+        {
+            var c = built.Contract;
+            bool deathConfirmed = PoliceConfirmedDeath(c);
+            switch (repSubtypeId)
+            {
+                // 주택 내부에서 사망자가 확인됨 / 사망 확인, 원인 미확정
+                case "REP-SUB-MUR-01":
+                case "REP-SUB-MUR-02":
+                    return deathConfirmed;
+                // 사고·자살로 처리·추정한 기존 기록이 있어야 한다.
+                case "REP-SUB-MUR-03":
+                    return deathConfirmed && (c.Truth.CoverUp == CoverUpMethod.AccidentalDeathDisguise || c.Truth.CoverUp == CoverUpMethod.SuicideDisguise);
+                // 사망 경위 관련 정보 사이에 실제 불일치가 있어야 한다: 사망이 확인되지 않은 채 사망 정황만 있거나, 시신이 옮겨졌거나, 경위가 조작됐다.
+                case "REP-SUB-MUR-04":
+                    return !deathConfirmed
+                           || c.Truth.ActualSubtypeId == "ACT-SUB-MUR-03"
+                           || c.Truth.CoverUp != CoverUpMethod.None;
+                // 사건 직후 현장에서 상해가 확인됨: 피해자가 현장을 떠나지 않았다.
+                case "REP-SUB-ASS-01":
+                    return !VictimMovedAfterCore(built);
+                // 시간이 지난 뒤 상해가 확인됨: 다른 공간으로 옮긴 뒤 또는 시간 간격을 두고 확인된 실제 경위가 있다.
+                case "REP-SUB-ASS-02":
+                    return VictimMovedAfterCore(built) || c.Truth.ActualSubtypeId == "ACT-SUB-ASS-04";
+                // 관련자 진술이 엇갈림: 서로 어긋나는 진술(거짓 알리바이)이 실제로 있다.
+                case "REP-SUB-ASS-04":
+                    return built.Materials.Any(m => m.MaterialId.Contains("false-alibi"));
+                default:
+                    return repSubtypeId != null && CaseCatalog.RepresentativeSubtypes[c.PoliceCrimeType].Any(e => e.Id == repSubtypeId);
+            }
+        }
+
+        /// <summary>
+        /// 실제 세부 종류 성립 검증(04 2026-11-12 필수 성립 기준): 실제 유형에 속하고, 진실·시간표가 그 기준을 만족해야 한다.
+        /// 대표 세부 패턴도 대표 유형에 속하고 경찰 초기 정보와 양립해야 한다. 어긋나면 후보를 다시 생성한다.
+        /// </summary>
+        public static bool ValidateSubtypes(GeneratedContract built)
+        {
+            var c = built.Contract;
+            string act = c.Truth.ActualSubtypeId;
+            if (act == null || !CaseCatalog.ActualSubtypes[c.PrimaryCrimeType].Any(e => e.Id == act)) return false;
+            var body = built.Materials.FirstOrDefault(m => m.MaterialId == ContractPipeline.BodyMaterialId(c.ContractId));
+            bool ok = act switch
+            {
+                "ACT-SUB-MUR-01" => !c.Truth.BodyHidden && !c.Truth.DelayedDeath && (body == null || body.RoomId == built.Timeline.SceneRoomId),
+                "ACT-SUB-MUR-02" => c.Truth.DelayedDeath,
+                "ACT-SUB-MUR-03" => !c.Truth.BodyHidden && body != null && body.RoomId != built.Timeline.SceneRoomId,
+                "ACT-SUB-MUR-04" => c.Truth.BodyHidden,
+                "ACT-SUB-ASS-02" => false, // 반복 공격 경위를 만들지 않는다.
+                "ACT-SUB-ASS-03" => VictimMovedAfterCore(built),
+                "ACT-SUB-ASS-01" or "ACT-SUB-ASS-04" => !VictimMovedAfterCore(built),
+                _ => true
+            };
+            return ok && IsRepresentativeSubtypeCompatible(built, c.Truth.RepresentativeSubtypeId);
         }
 
         /// <summary>시간표 적용(사망 피해자를 현장에 둠) 뒤, 시신 자료가 놓인 방으로 시신 위치를 맞춘다.</summary>

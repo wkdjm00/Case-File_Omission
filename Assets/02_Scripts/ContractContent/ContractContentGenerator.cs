@@ -244,6 +244,9 @@ namespace CaseFileOmission.ContractContent
             Merge(new EvidenceMaterialValidator().Validate(built.Materials, timeline, built.Npcs, built.Rooms).Errors);
             Merge(new ContractTimelineValidator().ValidateNpcKnowledge(timeline, built.Npcs).Errors);
             Merge(ValidateOrganizationTarget(built));
+            // 04 2026-11-12: 대표 세부 패턴·실제 세부 종류가 경찰 초기 정보·실제 경위와 양립하지 않으면 후보를 다시 생성한다.
+            if (!CaseDetailGenerator.ValidateSubtypes(built))
+                Merge(new[] { ContractValidationErrorCode.CONTRADICTION });
             if (constraints != null && !constraints.IsSatisfiedBy(candidate, built.Npcs))
                 Merge(new[] { ContractValidationErrorCode.CONTRACT_INVALID });
 

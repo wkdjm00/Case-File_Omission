@@ -53,13 +53,16 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
-        public void Conceal_NoOtherHeldClue_Throws()
+        public void Conceal_NoOtherHeldClue_ConcealsWithoutSubstitute()
         {
+            // 06 확정: 대체 카드 묶음이 비면 보충하지 않는다 — 대체 없이 은폐만 기록한다.
             var repo = BuildRepositoryWithClues("clue-1");
             var service = new EvidenceManipulationService(repo);
             var held = new List<string> { "clue-1" };
 
-            Assert.Throws<InvalidOperationException>(() => service.Conceal("clue-1", "player", held));
+            var record = service.Conceal("clue-1", "player", held);
+            Assert.IsNull(record.DisplayedClueId);
+            Assert.AreEqual(ManipulationType.Conceal, record.Type);
         }
 
         [Test]

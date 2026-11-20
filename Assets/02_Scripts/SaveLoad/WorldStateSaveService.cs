@@ -762,7 +762,9 @@ namespace CaseFileOmission.SaveLoad
             {
                 foreach (var m in data.ManipulationHistory ?? Array.Empty<ManipulationRecordDto>())
                 {
-                    if (m == null || !ClueKnown(t, m.OriginalClueId) || !ClueKnown(t, m.DisplayedClueId) || !IsDefined(m.Type))
+                    if (m == null || !ClueKnown(t, m.OriginalClueId) || !IsDefined(m.Type)
+                        // 대체 카드 없는 은폐만 표시 단서가 비어 있을 수 있다.
+                        || (string.IsNullOrEmpty(m.DisplayedClueId) ? m.Type != ManipulationType.Conceal : !ClueKnown(t, m.DisplayedClueId)))
                     {
                         Log(logger, "SAVE_INVALID_MANIPULATION", "참조가 잘못된 조작 이력을 건너뜁니다.", clueId: m?.OriginalClueId);
                         continue;

@@ -195,7 +195,7 @@ namespace CaseFileOmission.Playtest
             var row = Ui.Row(controls, 38);
             Ui.Button(row, "그대로", () => { _manipulation = CardManipulation.None; Rebuild(); }, true, 38, _manipulation == CardManipulation.None ? Ui.AccentColor : (Color?)null, 16);
             Ui.Button(row, "뒤집기(왜곡)", () => { _manipulation = CardManipulation.Distort; Rebuild(); }, true, 38, _manipulation == CardManipulation.Distort ? Ui.AccentColor : (Color?)null, 16);
-            Ui.Button(row, "끌어오기(은폐)", () => { _manipulation = CardManipulation.Conceal; Rebuild(); }, flow.PlayerReserve.Count > 0, 38, _manipulation == CardManipulation.Conceal ? Ui.AccentColor : (Color?)null, 16);
+            Ui.Button(row, "끌어오기(은폐)", () => { _manipulation = CardManipulation.Conceal; Rebuild(); }, true, 38, _manipulation == CardManipulation.Conceal ? Ui.AccentColor : (Color?)null, 16);
             Ui.Toggle(controls, "거짓으로 바꾸어 말한다", _lying, v => _lying = v);
             Ui.Button(controls, "카드 제시", Present, myTurn && _selectedCard != null, 46, Ui.AccentColor);
             Ui.Button(controls, flow.PresentedThisTurn(s.PlayerId) == 0 ? "차례 넘기기 (카드 없이 — 의심 상승)" : "차례 끝내기", () =>

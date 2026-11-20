@@ -141,6 +141,7 @@ namespace CaseFileOmission.ContractContent
                 new CatalogEntry("ACT-SUB-MUR-01", "사망 장소에서 시신 발견"),
                 new CatalogEntry("ACT-SUB-MUR-02", "공격 후 생존 시간을 거쳐 사망"),
                 new CatalogEntry("ACT-SUB-MUR-03", "사망 장소와 시신 발견 장소가 다름"),
+                new CatalogEntry("ACT-SUB-MUR-04", "인계 시점까지 시신 미발견"),
             },
             [CrimeType.Missing] = new[]
             {
@@ -152,6 +153,7 @@ namespace CaseFileOmission.ContractContent
             [CrimeType.AssaultInjury] = new[]
             {
                 new CatalogEntry("ACT-SUB-ASS-01", "단일 사건에서 즉시 확인된 비치명적 상해"),
+                new CatalogEntry("ACT-SUB-ASS-02", "반복 공격에 따른 누적 상해"),
                 new CatalogEntry("ACT-SUB-ASS-03", "다른 주택 공간으로 이동한 뒤 상해 확인"),
                 new CatalogEntry("ACT-SUB-ASS-04", "시간 간격을 두고 확인된 상해"),
             },

@@ -1269,11 +1269,6 @@ namespace CaseFileOmission.Game
             }
         }
 
-        /// <summary>
-        /// 플레이어 차례가 올 때까지 다른 참가자의 차례를 진행한다. NPC·경찰이 어떤 카드를 낼지는 원문에 선택 규칙이 없어(06: 보유 카드를
-        /// 제시하거나 넘길 수 있음, 제시 강제 없음) 넘긴다. NPC가 넘기면 06 확정 표대로 그 NPC에 대한 다른 NPC들의 관계 의심도가 오른다
-        /// (연속 넘기기 +5/+8/+12/+15). 경찰의 '본인 의심도'를 담는 상태는 없어 경찰의 넘기기는 기록만 한다.
-        /// </summary>
         /// <summary>회의에서 NPC·경찰이 낸 카드(최근 차례 묶음). UI 대사 표시용 — 판정 결과는 개인 의견에 이미 반영됐다.</summary>
         public sealed class ParticipantCardPlay
         {
@@ -1329,6 +1324,11 @@ namespace CaseFileOmission.Game
             return true;
         }
 
+        /// <summary>
+        /// 플레이어 차례가 올 때까지 다른 참가자의 차례를 진행한다. NPC·경찰은 TryParticipantCardPlay 규칙으로 카드를 내고, 낼 카드가 없으면 넘긴다.
+        /// NPC가 넘기면 06 확정 표대로 그 NPC에 대한 다른 NPC들의 관계 의심도가 오른다(연속 넘기기 +5/+8/+12/+15).
+        /// 경찰의 '본인 의심도'를 담는 상태는 없어 경찰의 넘기기는 기록만 한다.
+        /// </summary>
         private void AdvanceToPlayerTurn()
         {
             LastParticipantPlays.Clear();
@@ -1433,11 +1433,7 @@ namespace CaseFileOmission.Game
             if (MeetingFlow.CurrentTurnId != PlayerId) return GameActionResult.Fail(GameActionFailure.NotPlayersTurn);
             if (!MeetingFlow.PlayerHand.Contains(clueId)) return GameActionResult.Fail(GameActionFailure.CardNotInHand);
             if (!MeetingFlow.CanPresentNormalCard(PlayerId, clueId)) return GameActionResult.Fail(GameActionFailure.TurnLimitReached);
-            // 은폐의 대체 카드는 대체용 카드 묶음에서만 고른다(09 최신). 묶음이 빈 상태의 은폐는 대체 카드 처리 규칙이
-            // 조작 기록(대체 단서 필수)과 맞지 않아 거부한다(임시 — 인수인계 문서에 기록).
-            if (manipulation == CardManipulation.Conceal && MeetingFlow.PlayerReserve.Count == 0)
-                return GameActionResult.Fail(GameActionFailure.InvalidInput);
-
+            // 은폐의 대체 카드는 대체용 카드 묶음에서만 고른다(09 최신). 06 확정: 묶음이 비어 있으면 보충 없이 은폐만 하고 손패가 줄어든다.
             string eventId = NextEventId("card");
             var card = Meeting.PresentCard(eventId, PlayerId, clueId, manipulation, MeetingFlow.PlayerReserve.Concat(new[] { clueId }).ToList());
             MeetingFlow.RecordNormalCardPresented(PlayerId);
@@ -1445,6 +1441,14 @@ namespace CaseFileOmission.Game
                 MeetingFlow.ConcealFromHand(clueId, card.ManipulationRecordApplied?.DisplayedClueId);
             else
                 MeetingFlow.ConsumeFromHand(clueId);
+
+            if (manipulation == CardManipulation.Conceal && card.ManipulationRecordApplied != null && card.ManipulationRecordApplied.DisplayedClueId == null)
+            {
+                // 대체 카드 없이 은폐: 다른 참가자 앞에 내놓인 카드가 없으므로 반응·판정·개인 의견 변화가 없다. 지정한 카드의 접근 상태만 바꾼다.
+                LastCardResolution = null;
+                if (Clues.Exists(clueId)) Clues.GetRecord(clueId).ApplyConcealment(true, detected: false);
+                return AfterMeetingAction();
+            }
 
             LastCardResolution = MeetingResolver.Resolve(eventId, card, lying, hasSupportingEvidence, BuildJudges());
             foreach (var delta in LastCardResolution.SuspicionDeltas)

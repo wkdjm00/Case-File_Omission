@@ -15,8 +15,8 @@ namespace CaseFileOmission.Evidence
         public DateTime AppliedAtUtc { get; }
 
         /// <summary>
-        /// 은폐(Conceal)일 때 실제로 제시되는 대체 단서 ID. 왜곡(Distort)일 때는 원본과 동일한 ID를 사용하되
-        /// 표시 상태만 왜곡으로 취급한다.
+        /// 은폐(Conceal)일 때 실제로 제시되는 대체 단서 ID. 대체 카드 묶음이 비어 있으면 대체 없이 은폐만 하므로 null이다
+        /// (06 확정: 묶음이 소진되면 보충하지 않는다). 왜곡(Distort)일 때는 원본과 동일한 ID를 사용하되 표시 상태만 왜곡으로 취급한다.
         /// </summary>
         public string DisplayedClueId { get; }
 
@@ -24,8 +24,9 @@ namespace CaseFileOmission.Evidence
         {
             if (string.IsNullOrEmpty(originalClueId))
                 throw new ArgumentException("originalClueId는 비어 있을 수 없습니다.", nameof(originalClueId));
-            if (string.IsNullOrEmpty(displayedClueId))
+            if (string.IsNullOrEmpty(displayedClueId) && type != ManipulationType.Conceal)
                 throw new ArgumentException("displayedClueId는 비어 있을 수 없습니다.", nameof(displayedClueId));
+            if (string.IsNullOrEmpty(displayedClueId)) displayedClueId = null;
 
             OriginalClueId = originalClueId;
             Type = type;
