@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CaseFileOmission.Contracts;
+using CaseFileOmission.ContractContent;
 using CaseFileOmission.Core;
+using CaseFileOmission.Evidence;
 using CaseFileOmission.Endings;
 using CaseFileOmission.Game;
 using CaseFileOmission.MainCase;
@@ -30,6 +32,84 @@ namespace CaseFileOmission.Tests
 
         private static Dictionary<string, bool> AllVotes(GameSession s, bool accept) =>
             s.MeetingFlow.ParticipantIds.Where(id => id != s.PlayerId).ToDictionary(id => id, _ => accept);
+
+        [Test]
+        public void AcceptedFalseMaterial_RecordsBelievesFalseWithAcquisitionSource()
+        {
+            var s = StartContract(seed: 61);
+            Assert.IsTrue(s.PassTime(s.State.RemainingTimeSlots).Success);
+            var receiver = s.Npcs.GetByContract(s.CurrentContract.ContractId)
+                .First(n => n.IsAlive && s.Occupancy.HasPosition(n.NpcId));
+            s.Relationships.SetSuspicion(receiver.NpcId, s.PlayerId, 0f);
+
+            var falseMaterial = new EvidenceMaterial
+            {
+                MaterialId = "test-false-card",
+                ContractId = s.CurrentContract.ContractId,
+                Format = ClueFormat.Testimony,
+                TruthStatus = ClueTruthStatus.False,
+                SourceNpcId = s.CurrentContract.Truth.PerpetratorId,
+                Acquisition = MaterialAcquisition.TalkToNpc,
+                Title = "테스트용 거짓 진술",
+                Content = "검증되지 않은 거짓 주장",
+                StatedInfoIds = { "test-false-claim" }
+            };
+            s.Materials.Add(falseMaterial);
+            s.Clues.Discover(falseMaterial.ToClueDefinition());
+            s.Clues.PickUpByPlayer(falseMaterial.MaterialId);
+
+            Assert.IsTrue(s.StartMeeting(new[] { falseMaterial.MaterialId }).Success);
+            var result = s.PresentCard(falseMaterial.MaterialId, CardManipulation.None, lying: false, hasSupportingEvidence: false);
+            Assert.IsTrue(result.Success);
+            Assert.IsTrue(s.LastCardResolution.Judgements.Any(j => j.JudgeId == receiver.NpcId && j.Accepts));
+
+            var record = receiver.InfoHistory.LastOrDefault(r => r.InfoId == "test-false-claim");
+            Assert.IsNotNull(record, "NPC가 거짓 자료를 수용하면 정보 이력이 남아야 한다.");
+            Assert.AreEqual(NpcInformationState.BelievesFalse, record.State);
+            Assert.AreEqual(NpcInfoAcquisitionMethod.Dialogue, record.Method);
+            Assert.AreEqual(falseMaterial.MaterialId, record.SourceEvidenceId);
+            Assert.AreEqual(s.PlayerId, record.SourcePersonId);
+            Assert.IsTrue(record.Minute.HasValue);
+            Assert.IsTrue(record.SourceEventId.StartsWith("npc-false-belief:", StringComparison.Ordinal));
+        }
+
+        [Test]
+        public void AcceptedFalseMaterial_AfterSuccessfulVerification_RecordsBelievesFalse()
+        {
+            var s = StartContract(seed: 62);
+            Assert.IsTrue(s.PassTime(s.State.RemainingTimeSlots).Success);
+            var receiver = s.Npcs.GetByContract(s.CurrentContract.ContractId)
+                .First(n => n.IsAlive && s.Occupancy.HasPosition(n.NpcId));
+
+            var falseMaterial = new EvidenceMaterial
+            {
+                MaterialId = "test-false-card-verified",
+                ContractId = s.CurrentContract.ContractId,
+                Format = ClueFormat.Testimony,
+                TruthStatus = ClueTruthStatus.False,
+                SourceNpcId = s.CurrentContract.Truth.PerpetratorId,
+                Acquisition = MaterialAcquisition.TalkToNpc,
+                Title = "검증 뒤 수용되는 테스트용 거짓 진술",
+                Content = "검증 뒤 수용되는 거짓 주장",
+                StatedInfoIds = { "test-false-claim-verified" }
+            };
+            s.Materials.Add(falseMaterial);
+            s.Clues.Discover(falseMaterial.ToClueDefinition());
+            s.Clues.PickUpByPlayer(falseMaterial.MaterialId);
+            Assert.IsTrue(s.StartMeeting(new[] { falseMaterial.MaterialId }).Success);
+
+            s.Relationships.SetSuspicion(receiver.NpcId, s.PlayerId, 100f);
+            Assert.IsTrue(s.PresentCard(falseMaterial.MaterialId, CardManipulation.None, lying: false, hasSupportingEvidence: false).Success);
+            var question = s.LastCardResolution.OpenedQuestions.First(q => q.JudgeId == receiver.NpcId);
+            Assert.IsNull(receiver.InfoHistory.LastOrDefault(r => r.InfoId == "test-false-claim-verified"),
+                "의문을 제기한 직후에는 잘못된 믿음을 기록하지 않는다.");
+
+            Assert.IsTrue(s.RespondToQuestion(question.QuestionId, success: true).Success);
+            var record = receiver.InfoHistory.LastOrDefault(r => r.InfoId == "test-false-claim-verified");
+            Assert.IsNotNull(record);
+            Assert.AreEqual(NpcInformationState.BelievesFalse, record.State);
+            Assert.AreEqual(falseMaterial.MaterialId, record.SourceEvidenceId);
+        }
 
         [Test]
         public void NewGame_GivesDiaryAtStart_AndDeathReportAfterPrologue()
