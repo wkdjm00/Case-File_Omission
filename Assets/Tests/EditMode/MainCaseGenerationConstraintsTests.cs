@@ -308,8 +308,19 @@ namespace CaseFileOmission.Tests
                 s.MainCase.AcquireClue(name);
             var constraints = s.PlanMainCaseConstraints();
             Assert.AreEqual(MainCaseClueNames.RepeatedExperimentNumberList, constraints.PlannedClueName);
+            Assert.IsTrue(constraints.RequireMurder);
+            Assert.AreEqual("기자", constraints.VictimOccupation);
+            Assert.AreEqual("METHOD-04", constraints.MethodId);
+            Assert.AreEqual("TOOL-03", constraints.ToolId);
+            Assert.AreEqual("REL-06", constraints.RelationshipId);
+            Assert.AreEqual(CaseCatalog.ObjectId(HouseLayoutFactory.Study, "봉투"), constraints.DocumentObjectId);
             var built = Generate(constraints, 2);
             Assert.IsNotNull(built);
+            Assert.AreEqual(CrimeType.Murder, built.Contract.PrimaryCrimeType);
+            Assert.AreEqual("기자", built.Npcs.Get(built.Contract.Truth.VictimId).Occupation);
+            Assert.AreEqual("METHOD-04", built.Contract.Truth.MethodId);
+            Assert.AreEqual("TOOL-03", built.Contract.Truth.ToolId);
+            Assert.AreEqual("REL-06", built.Contract.Truth.RelationshipId);
             Assert.AreEqual(built.Contract.Truth.VictimId, built.Contract.DocumentHolderNpcId);
         }
 
