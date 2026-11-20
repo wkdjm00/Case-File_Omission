@@ -73,6 +73,57 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void TryAcquire_PoliceAtLimit_ReplacesLowestPriorityOnlyWhenNewClueIsHigher()
+        {
+            var manager = new EvidenceCapacityManager();
+            var scores = new System.Collections.Generic.Dictionary<string, int>
+            {
+                ["old-low"] = 10, ["mid"] = 30, ["high"] = 80,
+                ["old-tie"] = 10, ["new-high"] = 20
+            };
+            manager.TryAcquire("police-A", HolderType.Police, "old-low");
+            manager.TryAcquire("police-A", HolderType.Police, "mid");
+            manager.TryAcquire("police-A", HolderType.Police, "high");
+            manager.TryAcquire("police-A", HolderType.Police, "old-tie");
+            manager.TryAcquire("police-A", HolderType.Police, "mid-2");
+
+            scores["mid-2"] = 30;
+            var result = manager.TryAcquire(
+                "police-A", HolderType.Police, "new-high",
+                (oldId, newId) => scores[newId] > scores[oldId],
+                priority: id => scores[id]);
+
+            Assert.AreEqual(EvidenceAcquisitionOutcome.Replaced, result.Outcome);
+            Assert.AreEqual("old-low", result.ReplacedClueId, "가장 낮은 우선도의 보유 단서를 교체한다.");
+            CollectionAssert.Contains(manager.GetHeldClues("police-A"), "new-high");
+            CollectionAssert.DoesNotContain(manager.GetHeldClues("police-A"), "old-low");
+            Assert.AreEqual(5, manager.GetHeldClues("police-A").Count);
+        }
+
+        [Test]
+        public void TryAcquire_PoliceAtLimit_TieDoesNotReplace()
+        {
+            var manager = new EvidenceCapacityManager();
+            var scores = new System.Collections.Generic.Dictionary<string, int>();
+            for (int i = 0; i < 5; i++)
+            {
+                string id = $"clue-{i}";
+                scores[id] = 10;
+                manager.TryAcquire("police-A", HolderType.Police, id);
+            }
+            scores["new-tie"] = 10;
+
+            var result = manager.TryAcquire(
+                "police-A", HolderType.Police, "new-tie",
+                (oldId, newId) => scores[newId] > scores[oldId],
+                priority: id => scores[id]);
+
+            Assert.AreEqual(EvidenceAcquisitionOutcome.RejectedAtCapacity, result.Outcome);
+            Assert.AreEqual(5, manager.GetHeldClues("police-A").Count);
+            CollectionAssert.DoesNotContain(manager.GetHeldClues("police-A"), "new-tie");
+        }
+
+        [Test]
         public void TryAcquire_PoliceLimitIsFive()
         {
             var manager = new EvidenceCapacityManager();
