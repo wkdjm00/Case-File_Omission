@@ -1819,8 +1819,11 @@ namespace CaseFileOmission.Game
             StageUnlocked = stage => MainCase.CurrentStage >= ToMainStage(stage),
             ContractsCompletedSinceUnlock = stage =>
                 Campaign.StageUnlockedAtCompleted.TryGetValue(ToMainStage(stage).ToString(), out var at) ? Campaign.CompletedContractCount - at : 0,
-            // 고정 설정 데이터(EXPERIMENT_PRESSURE_V1 등)는 항상 존재한다. 문서 자료는 플레이어가 얻었거나 어느 의뢰에 실제로 배치된 것만 존재한다.
-            SourceAvailable = label => label.All(ch => ch < 0x80) || MainCase.HasAcquired(label) || Campaign.GeneratedMainDocuments.Contains(label),
+            // 고정 설정은 명시적으로 등록된 ID만 허용한다. 문서는 플레이어 소지와 별개로 캠페인에 배치된 자료도 원본 존재로 본다.
+            // 임의의 ASCII 문서 ID가 고정 설정으로 오인되어 없는 출처의 보고서가 적격 처리되지 않도록 한다.
+            SourceAvailable = label => OrgSupplementaryReports.IsKnownFixedDataSource(label)
+                || MainCase.HasAcquired(label)
+                || Campaign.GeneratedMainDocuments.Contains(label),
             FinalReportComplete = FinalReport.Report.IsComplete
         };
 
