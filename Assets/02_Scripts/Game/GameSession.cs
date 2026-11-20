@@ -559,10 +559,6 @@ namespace CaseFileOmission.Game
         public HashSet<string> InvestigatedObjectIds { get; } = new HashSet<string>();
 
         /// <summary>
-        /// 지금 방의 조사 오브젝트 하나를 조사한다(06: 새 대상·물건 조사 1시간 = 4칸). 단서가 없을 수도 있다.
-        /// 담당 경찰이 같은 방이면 새 단서마다 단서 확인 요청을 굴린다.
-        /// </summary>
-        /// <summary>
         /// 문서·자료 열람. 처음 확인하는 문서는 1시간(4칸), 이미 읽은 자료를 다시 여는 동작은 0칸이다.
         /// 의뢰 사이처럼 시간 예산이 없는 구간의 첫 열람도 0칸으로 기록한다.
         /// </summary>
@@ -589,6 +585,10 @@ namespace CaseFileOmission.Game
             return AfterAction(result);
         }
 
+        /// <summary>
+        /// 지금 방의 조사 오브젝트 하나를 조사한다(06: 새 대상·물건 조사 1시간 = 4칸). 단서가 없을 수도 있다.
+        /// 담당 경찰이 같은 방이면 새 단서마다 단서 확인 요청을 굴린다.
+        /// </summary>
         public GameActionResult InvestigateObject(string objectId)
         {
             var guard = GuardInvestigation(InvestigateCost);
