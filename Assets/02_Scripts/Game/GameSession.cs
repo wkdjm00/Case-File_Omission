@@ -298,12 +298,19 @@ namespace CaseFileOmission.Game
                 return new ContractConstraints { PlannedClueName = MainCaseClueNames.SeniorOfficialLetter, PerpetratorPersonality = rules.DesireTrait };
             if (Missing(MainCaseClueNames.NumberNoteLeftForLover))
                 return new ContractConstraints { PlannedClueName = MainCaseClueNames.NumberNoteLeftForLover, RequireMurder = true, CoupleVictims = true };
-            // 반복 실험 번호 목록: "해당 피해자의 방 서랍 안쪽 오래된 봉투". 사건 조건은 없고 보관 위치만 확정이다.
-            // 주택 8공간에 피해자 개인 방·서랍 오브젝트가 따로 없어, 봉투가 있는 서재의 '봉투'에 둔다(임시).
+            // 03 최신 조건: 피해자 직업 기자 + 실제 살인 + METHOD-04 총기 공격 + TOOL-03 총기 + REL-06 업무상 이해관계.
+            // 원문은 오래된 봉투로만 지정하고 특정 방 ID를 고정하지 않는다. 봉투는 주택 8공간 중 기존 오브젝트인 서재 봉투를 사용한다.
+            // 총기의 실제 소유·접근 경로는 04의 조건부 허용 규칙이 요구하나 현재 NPC·시간표 모델에 독립 데이터가 없어
+            // 이 경로의 검증은 별도 차단 항목으로 남긴다(이 조건을 충족한 것처럼 임의 소유자를 만들지 않는다).
             if (Missing(MainCaseClueNames.RepeatedExperimentNumberList))
                 return new ContractConstraints
                 {
                     PlannedClueName = MainCaseClueNames.RepeatedExperimentNumberList,
+                    RequireMurder = true,
+                    VictimOccupation = "기자",
+                    MethodId = "METHOD-04",
+                    ToolId = "TOOL-03",
+                    RelationshipId = "REL-06",
                     HolderIsVictim = true,
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "봉투")
                 };
