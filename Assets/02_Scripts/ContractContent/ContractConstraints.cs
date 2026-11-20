@@ -15,7 +15,7 @@ namespace CaseFileOmission.ContractContent
         /// <summary>이 제약으로 배치할 메인 사건 단서 이름(기록·저장용).</summary>
         public string PlannedClueName;
 
-        /// <summary>실제·대표 유형을 모두 살인으로 고정한다(피해자가 숨져야 성립하는 조건).</summary>
+        /// <summary>실제 사건 유형만 살인으로 고정한다. 경찰 대표 유형·외부 설명은 기존 선택을 유지한다.</summary>
         public bool RequireMurder;
 
         /// <summary>함께 숨진 피해자 수(대표 피해자 포함). 1이면 추가 피해자 없음.</summary>
@@ -65,18 +65,26 @@ namespace CaseFileOmission.ContractContent
         public void ApplyToCandidate(ContractInstance candidate)
         {
             candidate.PlannedMainCaseClue = PlannedClueName;
-            if (!RequireMurder || (candidate.PrimaryCrimeType == CrimeType.Murder && candidate.PoliceCrimeType == CrimeType.Murder))
+            if (!RequireMurder || candidate.PrimaryCrimeType == CrimeType.Murder)
                 return;
 
-            candidate.RepresentativeCrimeType = CrimeType.Murder;
+            // 실제 사건 유형만 살인으로 보정한다. 경찰의 대표 분류는 별도 상태이므로 덮어쓰지 않는다.
             candidate.PrimaryCrimeType = CrimeType.Murder;
-            candidate.Truth.VictimDeparted = false;
-            candidate.Truth.BodyHidden = false;
-            candidate.Truth.DelayedDeath = false;
-            if (!ContractGenerator.GetApplicableCoverUps(CrimeType.Murder).Contains(candidate.Truth.CoverUp))
+            candidate.Truth.VictimDeparted = ContractGenerator.RequiresVictimDeparture(
+                candidate.RepresentativeCrimeType, CrimeType.Murder);
+            candidate.Truth.BodyHidden = ContractGenerator.RequiresHiddenBody(
+                candidate.RepresentativeCrimeType, CrimeType.Murder);
+            candidate.Truth.DelayedDeath = ContractGenerator.RequiresDelayedDeath(
+                candidate.RepresentativeCrimeType, CrimeType.Murder);
+
+            if (candidate.Truth.BodyHidden)
+                candidate.Truth.CoverUp = CoverUpMethod.BodyConcealment;
+            else if (candidate.Truth.VictimDeparted)
                 candidate.Truth.CoverUp = CoverUpMethod.None;
-            // 진실 세부(방법·도구 등)는 유형에 맞춰 다시 고르게 비운다.
-            candidate.Truth.MethodId = null;
+            else if (!ContractGenerator.GetApplicableCoverUps(CrimeType.Murder).Contains(candidate.Truth.CoverUp))
+                candidate.Truth.CoverUp = CoverUpMethod.None;
+
+            // 실제 사건 유형 변경으로 성립하지 않게 된 조직 조건만 제거한다.
             if (candidate.OrgCondition != null && candidate.OrgCondition.HasCondition
                 && !ContractGenerator.IsConditionFeasible(candidate.OrgCondition.Type, candidate))
                 candidate.OrgCondition.Type = OrganizationConditionType.None;
