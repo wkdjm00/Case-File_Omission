@@ -328,6 +328,24 @@ namespace CaseFileOmission.Game
         {
             // 03 최신 확정 규칙: 실제 살인·방법·도구·관계 ID·피해자 직업·사건 날짜를 모두 만족해야 한다.
             // 문서는 현 의뢰에 이미 존재하는 조사 오브젝트에 배치한다. 새 인물·장소·소품은 생성하지 않는다.
+            // 배치 순서: 생존자 인계 기록 → 참가자 운영 규칙 안내문 → 학생 정보 획득 메모.
+            // 사건 날짜 하한이 가장 늦은 조건부터 처리한다. 각 단서의 나머지 획득 조건은 그대로 유지한다.
+            if (!MainCase.HasAcquired(MainCaseClueNames.SurvivorHandoverRecord))
+            {
+                return new ContractConstraints
+                {
+                    PlannedClueName = MainCaseClueNames.SurvivorHandoverRecord,
+                    RequireMurder = true,
+                    VictimOccupation = "공무원",
+                    MethodId = "METHOD-02",
+                    ToolId = "TOOL-01",
+                    RelationshipId = "REL-05",
+                    EarliestIncidentDate = "1984-11-20",
+                    HolderIsVictim = true,
+                    DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
+                };
+            }
+
             if (!MainCase.HasAcquired(MainCaseClueNames.ParticipantOperatingRulesNotice))
             {
                 return new ContractConstraints
@@ -355,22 +373,6 @@ namespace CaseFileOmission.Game
                     ToolId = "TOOL-05",
                     RelationshipId = "REL-06",
                     EarliestIncidentDate = "1984-10-01",
-                    HolderIsVictim = true,
-                    DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
-                };
-            }
-
-            if (!MainCase.HasAcquired(MainCaseClueNames.SurvivorHandoverRecord))
-            {
-                return new ContractConstraints
-                {
-                    PlannedClueName = MainCaseClueNames.SurvivorHandoverRecord,
-                    RequireMurder = true,
-                    VictimOccupation = "공무원",
-                    MethodId = "METHOD-02",
-                    ToolId = "TOOL-01",
-                    RelationshipId = "REL-05",
-                    EarliestIncidentDate = "1984-11-20",
                     HolderIsVictim = true,
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
                 };
