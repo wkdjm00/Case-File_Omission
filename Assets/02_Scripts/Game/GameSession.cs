@@ -838,12 +838,12 @@ namespace CaseFileOmission.Game
 
         private bool GetPersuasionDirectEvidence() =>
             CurrentContract != null && Clues.GetAllClueIds(CurrentContract.ContractId)
-                .Any(id => PlaytestMaterial(id)?.MaterialId.Contains("tool-evidence") == true);
+                .Any(id => Clues.GetDefinition(id).IsDirectPerpetratorEvidence);
 
         private bool GetPersuasionStrongEvidence() =>
             CurrentContract != null && Clues.GetAllClueIds(CurrentContract.ContractId)
                 .Any(id => Clues.GetDefinition(id).IdentifiesPerpetrator
-                           && PlaytestMaterial(id)?.MaterialId.Contains("tool-evidence") != true);
+                           && !Clues.GetDefinition(id).IsDirectPerpetratorEvidence);
 
         /// <summary>선행 자료 조건: 행동 전에 이미 보유한 자료만 센다(같은 행동에서 얻은 자료로 바로 다음 자료가 열리지 않음).</summary>
         private bool Unlocked(EvidenceMaterial m) => m.RequiresClueId == null || Clues.Exists(m.RequiresClueId);

@@ -462,6 +462,7 @@ namespace CaseFileOmission.SaveLoad
                     RebuttedByMaterialIds = m.RebuttedByMaterialIds.ToArray(),
                     FalsehoodReason = m.FalsehoodReason,
                     IdentifiesPerpetrator = m.IdentifiesPerpetrator,
+                    IsDirectPerpetratorEvidence = m.IsDirectPerpetratorEvidence,
                     ObjectId = m.ObjectId,
                     RequiresClueId = m.RequiresClueId,
                     Title = m.Title,
@@ -577,6 +578,7 @@ namespace CaseFileOmission.SaveLoad
                         SubjectNpcId = m.SubjectNpcId,
                         FalsehoodReason = m.FalsehoodReason,
                         IdentifiesPerpetrator = m.IdentifiesPerpetrator,
+                        IsDirectPerpetratorEvidence = m.IsDirectPerpetratorEvidence,
                         ObjectId = m.ObjectId,
                         RequiresClueId = m.RequiresClueId,
                         Title = m.Title,
@@ -615,7 +617,8 @@ namespace CaseFileOmission.SaveLoad
                     RelatedTruthNote = d.RelatedTruthNote,
                     SourceDescription = d.SourceDescription,
                     AcquisitionCondition = d.AcquisitionCondition,
-                    IdentifiesPerpetrator = d.IdentifiesPerpetrator
+                    IdentifiesPerpetrator = d.IdentifiesPerpetrator,
+                    IsDirectPerpetratorEvidence = d.IsDirectPerpetratorEvidence
                 }).ToArray();
 
                 data.Records = t.Clues.AllRecords.Select(r => new ClueRecordDto
@@ -711,7 +714,8 @@ namespace CaseFileOmission.SaveLoad
                         RelatedTruthNote = d.RelatedTruthNote,
                         SourceDescription = d.SourceDescription,
                         AcquisitionCondition = d.AcquisitionCondition,
-                        IdentifiesPerpetrator = d.IdentifiesPerpetrator
+                        IdentifiesPerpetrator = d.IdentifiesPerpetrator,
+                        IsDirectPerpetratorEvidence = d.IsDirectPerpetratorEvidence
                     };
 
                     ClueRecord record;

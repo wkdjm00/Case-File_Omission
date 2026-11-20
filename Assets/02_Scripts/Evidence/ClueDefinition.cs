@@ -31,6 +31,9 @@ namespace CaseFileOmission.Evidence
         /// ("가해자를 특정할 단서 2개를 숨긴 채 사건 종료")을 판정하는 데 사용한다.</summary>
         public bool IdentifiesPerpetrator;
 
+        /// <summary>물리 자료가 가해 행위를 직접 뒷받침하는지. ID 문자열 규칙에 의존하지 않는다.</summary>
+        public bool IsDirectPerpetratorEvidence;
+
         public ClueDefinition(string clueId, string contractId)
         {
             if (string.IsNullOrEmpty(clueId))

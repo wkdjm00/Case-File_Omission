@@ -291,6 +291,24 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void DirectToolEvidence_UsesExplicitMetadataAndSurvivesClueConversion()
+        {
+            var material = new CaseFileOmission.ContractContent.EvidenceMaterial
+            {
+                MaterialId = "case-mat-tool-evidence",
+                ContractId = "case",
+                Format = CaseFileOmission.Evidence.ClueFormat.PhysicalObject,
+                IsDirectPerpetratorEvidence = true
+            };
+
+            var definition = material.ToClueDefinition();
+
+            Assert.IsTrue(definition.IsDirectPerpetratorEvidence);
+            Assert.IsFalse(definition.IdentifiesPerpetrator,
+                "직접 증거와 가해자 식별 자료는 별도 성질이어야 한다.");
+        }
+
+        [Test]
         public void PersuasionCannotBeUnlockedByCallerSuppliedBooleans()
         {
             var s = StartContract(seed: 29);

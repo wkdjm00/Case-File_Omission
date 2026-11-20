@@ -64,6 +64,9 @@ namespace CaseFileOmission.ContractContent
 
         public bool IdentifiesPerpetrator;
 
+        /// <summary>가해 행위를 직접 뒷받침하는 물리 자료(예: 실제 범행 도구). 회유 확률 보정의 기준이다.</summary>
+        public bool IsDirectPerpetratorEvidence;
+
         /// <summary>
         /// 조사로 얻는 자료가 놓인 조사 오브젝트(04 2026-11-11 방별 조사 오브젝트 후보). null이면 방 자체에서 얻는다.
         /// 조사 오브젝트 ID는 "{room_id}:{오브젝트 이름}" 형식이다.
@@ -89,6 +92,7 @@ namespace CaseFileOmission.ContractContent
             SourceDescription = SourceNpcId ?? RoomId,
             AcquisitionCondition = Acquisition == MaterialAcquisition.TalkToNpc ? $"talk:{SourceNpcId}" : $"investigate:{ObjectId ?? RoomId}",
             IdentifiesPerpetrator = IdentifiesPerpetrator,
+            IsDirectPerpetratorEvidence = IsDirectPerpetratorEvidence,
             DisplayName = Title ?? MaterialId,
             DisplayedContent = Content
         };

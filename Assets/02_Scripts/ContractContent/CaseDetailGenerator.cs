@@ -174,6 +174,7 @@ namespace CaseFileOmission.ContractContent
                     AboutRoomId = core.RoomId,
                     SubjectNpcId = c.Truth.PerpetratorId,
                     StatedInfoIds = { core.InfoId },
+                    IsDirectPerpetratorEvidence = true,
                     Title = $"숨겨진 {c.Truth.Tool}",
                     Content = $"{CaseCatalog.ObjectName(obj)} 속에서 {c.Truth.Tool}이(가) 나왔다. '{c.Truth.Method}'에 쓰인 것으로 보이며, {perp}의 손수건에 싸여 있다."
                 });

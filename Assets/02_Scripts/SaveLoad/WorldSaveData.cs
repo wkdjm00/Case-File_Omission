@@ -28,6 +28,7 @@ namespace CaseFileOmission.SaveLoad
         public string SourceDescription;
         public string AcquisitionCondition;
         public bool IdentifiesPerpetrator;
+        public bool IsDirectPerpetratorEvidence;
     }
 
     [Serializable]
@@ -427,6 +428,7 @@ namespace CaseFileOmission.SaveLoad
         public string[] RebuttedByMaterialIds;
         public string FalsehoodReason;
         public bool IdentifiesPerpetrator;
+        public bool IsDirectPerpetratorEvidence;
         public string ObjectId;
         public string RequiresClueId;
         public string Title;
