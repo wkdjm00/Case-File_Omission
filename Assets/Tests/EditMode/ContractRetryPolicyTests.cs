@@ -114,6 +114,23 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void DefaultPolicy_UsesThreeCandidatesAndThreeAttempts()
+        {
+            var generator = new ContractGenerator(ContractGenerationConfig.CreateDefault(), new Random(4));
+            var validator = new RejectEverythingValidator();
+            var policy = new ContractRetryPolicy(generator, validator);
+
+            int ids = 0;
+            var result = policy.TryGenerate(() => $"default-{ids++}", validator.Validate);
+
+            Assert.IsFalse(result.Success);
+            Assert.AreEqual(3, result.CandidatesUsed);
+            Assert.AreEqual(9, result.ValidationAttempts);
+            Assert.AreEqual(9, validator.CallCount);
+            Assert.AreEqual(3, ids);
+        }
+
+        [Test]
         public void DefaultConfig_UsesThreeCandidatesAndThreeAttempts()
         {
             var config = ContractGenerationConfig.CreateDefault();
