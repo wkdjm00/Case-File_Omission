@@ -36,6 +36,16 @@ namespace CaseFileOmission.Contracts
         StubOutdoor
     }
 
+    /// <summary>실종 사건 인계 시점에 확인된 대상의 거주·방문·귀가 상황.</summary>
+    public enum MissingPersonCircumstance
+    {
+        None,
+        Resident,
+        Visitor,
+        ExpectedReturn,
+        LastContactUnknown
+    }
+
     /// <summary>
     /// 은폐 방식. 04페이지는 예시로만 제시하고("이 예시는 적용 조건과 최종 선택지를 모두 확정한 목록이 아니다")
     /// 최종 목록을 확정하지 않았으므로 이후 조건이 추가될 수 있다.
