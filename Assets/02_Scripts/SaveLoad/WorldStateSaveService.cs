@@ -192,7 +192,7 @@ namespace CaseFileOmission.SaveLoad
                 CarriedOverQuestions = t.CarriedOverQuestions?.Where(q => q != null && !q.IsClosed).Select(q => new CardQuestionDto
                 {
                     QuestionId = q.QuestionId, JudgeId = q.JudgeId, PresenterId = q.PresenterId, ClueId = q.ClueId,
-                    PresenterIsLying = q.PresenterIsLying, State = q.State, AdditionalVerificationsUsed = q.AdditionalVerificationsUsed,
+                    PresenterIsLying = q.PresenterIsLying, PresenterUsedDistortion = q.PresenterUsedDistortion, State = q.State, AdditionalVerificationsUsed = q.AdditionalVerificationsUsed,
                     DeferCount = q.DeferCount
                 }).ToArray() ?? Array.Empty<CardQuestionDto>(),
                 MainCase = CaptureMainCase(t),
@@ -1157,7 +1157,7 @@ namespace CaseFileOmission.SaveLoad
                 t.CarriedOverQuestions.Add(new CardQuestion
                 {
                     QuestionId = d.QuestionId, JudgeId = d.JudgeId, PresenterId = d.PresenterId, ClueId = d.ClueId,
-                    PresenterIsLying = d.PresenterIsLying, State = d.State, AdditionalVerificationsUsed = Math.Max(0, d.AdditionalVerificationsUsed),
+                    PresenterIsLying = d.PresenterIsLying, PresenterUsedDistortion = d.PresenterUsedDistortion, State = d.State, AdditionalVerificationsUsed = Math.Max(0, d.AdditionalVerificationsUsed),
                     DeferCount = Math.Max(0, d.DeferCount)
                 });
             }
