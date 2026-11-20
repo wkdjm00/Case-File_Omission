@@ -856,7 +856,12 @@ namespace CaseFileOmission.SaveLoad
                         HasJudgement = n.Beliefs.TryGetValue(info, out _),
                         Judgement = n.Beliefs.TryGetValue(info, out var j) ? j : NpcJudgement.Withhold
                     }).ToArray(),
-                    WitnessedEventIds = n.WitnessedEventIds.ToArray()
+                    WitnessedEventIds = n.WitnessedEventIds.ToArray(),
+                    InfoHistory = n.InfoHistory.Select(r => new NpcInfoRecordDto
+                    {
+                        InfoId = r.InfoId, State = r.State, Method = r.Method, HasMinute = r.Minute.HasValue, Minute = r.Minute ?? 0,
+                        SourceEventId = r.SourceEventId, SourceEvidenceId = r.SourceEvidenceId, SourcePersonId = r.SourcePersonId
+                    }).ToArray()
                 }).ToArray();
             }
 
@@ -928,6 +933,18 @@ namespace CaseFileOmission.SaveLoad
                         npc.KnownInfoIds.Add(k.InfoId);
                         if (k.HasJudgement && IsDefined(k.Judgement))
                             npc.Beliefs[k.InfoId] = k.Judgement;
+                    }
+
+                    // 이력은 보유한 정보에 대한 것만 되살린다. 정의되지 않은 값은 건너뛴다.
+                    foreach (var r in dto.InfoHistory ?? Array.Empty<NpcInfoRecordDto>())
+                    {
+                        if (r == null || string.IsNullOrEmpty(r.InfoId) || !npc.Knows(r.InfoId) || !IsDefined(r.State) || !IsDefined(r.Method))
+                            continue;
+                        npc.InfoHistory.Add(new NpcInfoRecord
+                        {
+                            InfoId = r.InfoId, State = r.State, Method = r.Method, Minute = r.HasMinute ? r.Minute : (int?)null,
+                            SourceEventId = NullIfEmpty(r.SourceEventId), SourceEvidenceId = NullIfEmpty(r.SourceEvidenceId), SourcePersonId = NullIfEmpty(r.SourcePersonId)
+                        });
                     }
                 }
             }
@@ -1389,6 +1406,8 @@ namespace CaseFileOmission.SaveLoad
         }
 
         // ───────────────────────── helpers ─────────────────────────
+
+        private static string NullIfEmpty(string value) => string.IsNullOrEmpty(value) ? null : value;
 
         private static bool IsDefined<TEnum>(TEnum value) where TEnum : struct, Enum =>
             Enum.IsDefined(typeof(TEnum), value);

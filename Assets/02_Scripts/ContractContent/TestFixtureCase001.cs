@@ -99,7 +99,7 @@ namespace CaseFileOmission.ContractContent
             foreach (var g in t.Knowledge)
             {
                 var npc = npcs.Get(g.NpcId);
-                npc.LearnInfo(g.InfoId, NpcJudgement.Believe);
+                npc.LearnInfo(g.InfoId, NpcJudgement.Believe, ContractTimelineApplier.RecordFor(g));
                 if (g.Path == InfoAcquisitionPath.DirectWitness && g.SourceEventId != null) npc.MarkWitnessed(g.SourceEventId);
             }
 

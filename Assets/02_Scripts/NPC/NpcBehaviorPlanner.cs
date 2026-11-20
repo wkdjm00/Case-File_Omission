@@ -645,7 +645,10 @@ namespace CaseFileOmission.NPC
                     _occupancy.Remove(clueId);
                     // 직접 조사로 알게 된 정보다. 믿음 판정 규칙은 없으므로 판단 보류로 둔다.
                     if (!actor.Knows(clueId))
-                        actor.LearnInfo(clueId, NpcJudgement.Withhold);
+                        actor.LearnInfo(clueId, NpcJudgement.Withhold, new NpcInfoRecord
+                        {
+                            State = NpcInformationState.KnowsFact, Method = NpcInfoAcquisitionMethod.Investigation, SourceEvidenceId = clueId
+                        });
                     result.PickedUpClueIds.Add(clueId);
                 }
                 else if (acquisition.Outcome == EvidenceAcquisitionOutcome.RejectedAtCapacity)

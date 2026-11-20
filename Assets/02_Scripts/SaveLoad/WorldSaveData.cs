@@ -103,6 +103,22 @@ namespace CaseFileOmission.SaveLoad
 
         /// <summary>실제로 목격한 사건 ID(버전 2부터).</summary>
         public string[] WitnessedEventIds;
+
+        /// <summary>정보 획득 이력(AI 계약 v1). 옛 저장에는 없으며 비어 있으면 이력 없이 복원한다.</summary>
+        public NpcInfoRecordDto[] InfoHistory;
+    }
+
+    [Serializable]
+    public sealed class NpcInfoRecordDto
+    {
+        public string InfoId;
+        public NpcInformationState State;
+        public NpcInfoAcquisitionMethod Method;
+        public bool HasMinute;
+        public int Minute;
+        public string SourceEventId;
+        public string SourceEvidenceId;
+        public string SourcePersonId;
     }
 
     [Serializable]

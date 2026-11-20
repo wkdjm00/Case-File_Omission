@@ -44,6 +44,9 @@ namespace CaseFileOmission.NPC
         /// </summary>
         public Func<NpcState, string, InfoSenderRelation> RelationOf;
 
+        /// <summary>전달 시점(분). 수신자의 획득 기록에 남긴다. 없으면 시점을 비워 둔다.</summary>
+        public Func<int> CurrentMinute;
+
         private const float BaseChance = 50f;
         private const float MinChance = 5f;
         private const float MaxChance = 95f;
@@ -155,7 +158,14 @@ namespace CaseFileOmission.NPC
 
                 // 04페이지 확정: "수신자가 그 정보를 믿는지는 별도 판정한다." 그 별도 판정 규칙은
                 // 아직 문서에 없으므로 임의로 Believe/Suspect를 단정하지 않고 Withhold(판단 보류)로 둔다.
-                receiver.LearnInfo(infoId, NpcJudgement.Withhold);
+                // 전달받은 정보는 자동으로 사실이 되지 않는다(07) — 정보 상태는 '의심'으로, 전달자·시점을 기록한다.
+                receiver.LearnInfo(infoId, NpcJudgement.Withhold, new NpcInfoRecord
+                {
+                    State = NpcInformationState.Suspects,
+                    Method = NpcInfoAcquisitionMethod.NpcTransfer,
+                    Minute = CurrentMinute?.Invoke(),
+                    SourcePersonId = sender.NpcId
+                });
             }
 
             return new InfoTransferResult

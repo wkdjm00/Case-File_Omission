@@ -668,7 +668,11 @@ namespace CaseFileOmission.Game
             foreach (var npc in Npcs.GetByContract(CurrentContract.ContractId).Where(n => n.IsAlive && Occupancy.HasPosition(n.NpcId) && Occupancy.GetRoom(n.NpcId) == PlayerRoom))
             {
                 incident.WitnessIds.Add(npc.NpcId);
-                npc.LearnInfo(incident.IncidentId, NpcJudgement.Believe);
+                npc.LearnInfo(incident.IncidentId, NpcJudgement.Believe, new NpcInfoRecord
+                {
+                    State = NpcInformationState.KnowsFact, Method = NpcInfoAcquisitionMethod.DirectObservation,
+                    Minute = Campaign.NpcMinute, SourceEventId = incident.IncidentId
+                });
                 npc.MarkWitnessed(incident.IncidentId);
             }
             foreach (var police in PoliceRoster.AllPoliceIds.Where(p => PoliceLife.IsAlive(p) && Occupancy.HasPosition(p) && Occupancy.GetRoom(p) == PlayerRoom))
@@ -723,7 +727,11 @@ namespace CaseFileOmission.Game
                         Campaign.TheftIncidents.Add(incident);
                     }
                     incident.AbsenceNoticedIds.Add(npc.NpcId);
-                    npc.LearnInfo("missing:" + id, NpcJudgement.Believe);
+                    npc.LearnInfo("missing:" + id, NpcJudgement.Believe, new NpcInfoRecord
+                    {
+                        State = NpcInformationState.KnowsFact, Method = NpcInfoAcquisitionMethod.DirectObservation,
+                        Minute = Campaign.NpcMinute, SourceEventId = incident.IncidentId
+                    });
                 }
             }
         }
@@ -1012,7 +1020,11 @@ namespace CaseFileOmission.Game
             {
                 shot.WitnessNpcIds.Add(witness.NpcId);
                 shot.InfoAcquiredByNpcIds.Add(witness.NpcId);
-                witness.LearnInfo(shot.EventId, NpcJudgement.Believe);
+                witness.LearnInfo(shot.EventId, NpcJudgement.Believe, new NpcInfoRecord
+                {
+                    State = NpcInformationState.KnowsFact, Method = NpcInfoAcquisitionMethod.DirectObservation,
+                    Minute = Campaign.NpcMinute, SourceEventId = shot.EventId
+                });
                 witness.MarkWitnessed(shot.EventId);
             }
             // 같은 방에 있던 살아 있는 경찰도 목격자로 기록한다(06 사격 이벤트 "목격자" 기록). 사격만으로 의심도는 바꾸지 않는다.
@@ -1933,6 +1945,7 @@ namespace CaseFileOmission.Game
                 Relationships = new NpcRelationshipStore();
                 InfoTransfer = new NpcInfoTransferService(_random);
             }
+            InfoTransfer.CurrentMinute = () => Campaign.NpcMinute;
             Planner = new NpcBehaviorPlanner(Npcs, Occupancy, Rooms, InfoTransfer, Relationships, Clues, Capacity, random: _random);
             Planner.AddCandidateSource(new NpcSceneInvestigationSource(this));
             Planner.AddCandidateSource(new NpcInteractionBehaviorSource(this));

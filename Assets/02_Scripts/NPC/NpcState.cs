@@ -59,10 +59,29 @@ namespace CaseFileOmission.NPC
             Personality = personality;
         }
 
-        public void LearnInfo(string infoId, NpcJudgement judgement)
+        /// <summary>
+        /// AI 계약 v1(2026-11-12) 정보 획득 이력. 같은 정보를 다른 출처에서 다시 얻으면 기존 기록을 덮지 않고 새 기록을 덧붙인다.
+        /// 출처를 모르는 획득(source 없음)은 임의의 출처로 채우지 않고 기록하지 않는다.
+        /// </summary>
+        public readonly List<NpcInfoRecord> InfoHistory = new List<NpcInfoRecord>();
+
+        public void LearnInfo(string infoId, NpcJudgement judgement, NpcInfoRecord source = null)
         {
             KnownInfoIds.Add(infoId);
             Beliefs[infoId] = judgement;
+            if (source == null) return;
+            source.InfoId = infoId;
+            bool duplicate = InfoHistory.Exists(r => r.InfoId == infoId && r.Method == source.Method && r.SourcePersonId == source.SourcePersonId
+                                                     && r.SourceEventId == source.SourceEventId && r.SourceEvidenceId == source.SourceEvidenceId);
+            if (!duplicate) InfoHistory.Add(source);
+        }
+
+        /// <summary>그 정보의 현재 정보 상태(가장 최근 기록). 기록이 없으면 null — 보유 여부(Knows)와는 별개다.</summary>
+        public NpcInformationState? GetInformationState(string infoId)
+        {
+            for (int i = InfoHistory.Count - 1; i >= 0; i--)
+                if (InfoHistory[i].InfoId == infoId) return InfoHistory[i].State;
+            return null;
         }
 
         public bool Knows(string infoId) => KnownInfoIds.Contains(infoId);

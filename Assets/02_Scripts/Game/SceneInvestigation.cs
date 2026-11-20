@@ -48,7 +48,12 @@ namespace CaseFileOmission.Game
                     RequiredRoomId = currentRoomId,
                     Execute = () =>
                     {
-                        foreach (var id in facts) actor.LearnInfo(id, NpcJudgement.Believe);
+                        foreach (var id in facts)
+                            actor.LearnInfo(id, NpcJudgement.Believe, new NpcInfoRecord
+                            {
+                                State = NpcInformationState.KnowsFact, Method = NpcInfoAcquisitionMethod.Investigation,
+                                Minute = currentMinute, SourceEvidenceId = objectId
+                            });
                         s.RecordSceneInvestigation(actor.NpcId, objectId, currentRoomId, currentMinute);
                     }
                 };

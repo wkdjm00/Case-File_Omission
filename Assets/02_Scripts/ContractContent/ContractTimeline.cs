@@ -629,6 +629,25 @@ namespace CaseFileOmission.ContractContent
         /// 시간표 근거가 있는 정보만 NPC 지식에 추가, 살인 피해자 사망 처리, 조사 시작 시각의 위치에 인물 배치.
         /// 직접 겪거나 본 일은 사실로 믿는 것으로 둔다(해석 — 목격 내용의 믿음 판정 규칙은 원본에 없음).
         /// </summary>
+        /// <summary>
+        /// 시간표 지식 근거 → AI 계약 v1 획득 기록. 직접 행동·목격·조사는 사실(KNOWS_FACT), 대화·전달로 들은 것은 '믿음'(BELIEVES_TRUE)이다.
+        /// </summary>
+        public static NpcInfoRecord RecordFor(KnowledgeGrant grant) => new NpcInfoRecord
+        {
+            State = grant.Path == InfoAcquisitionPath.Conversation || grant.Path == InfoAcquisitionPath.TransferredFromNpc
+                ? NpcInformationState.BelievesTrue : NpcInformationState.KnowsFact,
+            Method = grant.Path switch
+            {
+                InfoAcquisitionPath.OwnAction => NpcInfoAcquisitionMethod.DirectExperience,
+                InfoAcquisitionPath.DirectWitness => NpcInfoAcquisitionMethod.DirectObservation,
+                InfoAcquisitionPath.Investigation => NpcInfoAcquisitionMethod.Investigation,
+                InfoAcquisitionPath.Conversation => NpcInfoAcquisitionMethod.Dialogue,
+                _ => NpcInfoAcquisitionMethod.NpcTransfer
+            },
+            Minute = grant.Minute,
+            SourceEventId = string.IsNullOrEmpty(grant.SourceEventId) ? null : grant.SourceEventId
+        };
+
         public static void Apply(ContractTimeline timeline, ContractInstance contract, NpcRegistry registry, RoomOccupancyTracker occupancy)
         {
             if (timeline == null) throw new ArgumentNullException(nameof(timeline));
@@ -643,7 +662,7 @@ namespace CaseFileOmission.ContractContent
             {
                 var npc = registry.Get(grant.NpcId);
                 if (!npc.Knows(grant.InfoId))
-                    npc.LearnInfo(grant.InfoId, NpcJudgement.Believe);
+                    npc.LearnInfo(grant.InfoId, NpcJudgement.Believe, RecordFor(grant));
 
                 // 목격 여부는 실제 목격 사실로 기록한다(07 확정) — 역할과 무관하게 직접 본 사건이면 목격자다.
                 if (grant.Path == InfoAcquisitionPath.DirectWitness && grant.SourceEventId != null)
