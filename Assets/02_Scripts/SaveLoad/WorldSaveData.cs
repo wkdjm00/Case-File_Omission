@@ -489,6 +489,7 @@ namespace CaseFileOmission.SaveLoad
         public string PresenterId;
         public string ClueId;
         public bool PresenterIsLying;
+        public bool PresenterUsedDistortion;
         public CardQuestionState State;
         public int AdditionalVerificationsUsed;
         public int DeferCount;
@@ -497,7 +498,7 @@ namespace CaseFileOmission.SaveLoad
     [Serializable]
     public sealed class WorldSaveData
     {
-        public const int CurrentVersion = 7;
+        public const int CurrentVersion = 8;
 
         public int Version;
         public EvidenceSaveData Evidence;
