@@ -369,6 +369,7 @@ MonoBehaviour:
   - {fileID: 6667208582270719703, guid: 854fac40dc8b79a428fd83313ea20ef6, type: 3}
   - {fileID: 3827107200841264029, guid: 9519789ea96963d4db5943da3092a42f, type: 3}
   - {fileID: 8964520612191678652, guid: caecc1308f6998f469d3357a0060deb7, type: 3}
+  VictimPrefab: {fileID: 4331966583475485407, guid: 107ae783a903b2a4fbb4752882812926, type: 3}
   Props:
   - Prefab: {fileID: 8782509467522568770, guid: 409aa16fda57b444e943214c6815c684, type: 3}
     RoomId: ROOM_ENTRANCE_HALL

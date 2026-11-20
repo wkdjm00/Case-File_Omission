@@ -57,6 +57,7 @@ namespace CaseFileOmission.Playtest.Editor
             board.PolicePrefab = Load(Pieces + "Police_Body.prefab");
             board.CriminalPrefab = Load(Pieces + "Criminal_Body.prefab");
             board.NpcBodyPrefabs = Enumerable.Range(0, 5).Select(i => Load($"{Pieces}NPC_Body_0{i}.prefab")).ToArray();
+            board.VictimPrefab = Load(Pieces + "Victim.prefab");
             board.Props = BuildProps();
             game.Board = board;
 

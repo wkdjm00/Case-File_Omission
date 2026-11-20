@@ -1998,6 +1998,7 @@ namespace CaseFileOmission.Game
                 Campaign.NpcMinute += NpcMinutesPerTimeSlot;
                 var results = Planner.ExecuteTurn($"{CurrentContract.ContractId}-m{Campaign.NpcMinute}", CurrentContract.ContractId, Campaign.NpcMinute);
                 PolicePatrolTurn();
+                LivingVictimsFollowPolice();
                 CheckTheftAbsence();
                 ReportWitnessedCrimesToPolice();
                 // 07 3-3: 추적 발동 다음 턴부터 경찰 정보 수집 단계(기존 조사 흐름 — 별도 미니게임 없음).
@@ -2117,6 +2118,25 @@ namespace CaseFileOmission.Game
                 if (path != null && path.Count > 0 && (best == null || path.Count < best.Count)) best = path;
             }
             if (best != null) Occupancy.PlaceAt(police, best[0]);
+        }
+
+        /// <summary>
+        /// 사용자 지정 2026-11-20: 살아 있는 피해자는 담당 경찰 주변에만 머문다. 15분 턴마다 일정 이동 뒤에 호출해,
+        /// 경찰과 다른 방에 있으면 경찰 방 쪽으로 한 칸 옮긴다(경찰도 턴마다 최대 한 칸 움직이므로 곧 같은 방에 붙는다).
+        /// </summary>
+        private void LivingVictimsFollowPolice()
+        {
+            string police = HandlerPoliceId;
+            if (police == null || !PoliceLife.IsAlive(police) || !Occupancy.HasPosition(police)) return;
+            string policeRoom = Occupancy.GetRoom(police);
+            foreach (var victim in new[] { CurrentContract.Truth.VictimId }.Concat(CurrentContract.Truth.AdditionalVictimIds).Distinct())
+            {
+                if (victim == null || !Npcs.Exists(victim) || !Npcs.Get(victim).IsAlive || !Occupancy.HasPosition(victim)) continue;
+                string here = Occupancy.GetRoom(victim);
+                if (here == policeRoom) continue;
+                var path = Rooms.FindPath(here, policeRoom)?.ToList();
+                if (path != null && path.Count > 0) Occupancy.PlaceAt(victim, path[0]);
+            }
         }
 
         /// <summary>담당 경찰이 그 방에서 발견한 단서 수(07 §21 A·B형 보정): 경찰이 살펴본 대상에 놓인 자료 수.</summary>

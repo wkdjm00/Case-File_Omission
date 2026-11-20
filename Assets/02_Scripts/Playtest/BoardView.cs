@@ -98,6 +98,8 @@ namespace CaseFileOmission.Playtest
         public Font LabelFont;
         public GameObject PlayerPrefab, PolicePrefab, CriminalPrefab;
         public GameObject[] NpcBodyPrefabs = new GameObject[5];
+        [Tooltip("사망한 NPC(시신) 모델. 누운 자세로 만든 모델이라 따로 눕히지 않는다. 비우면 NPC_Body_03을 눕혀 대신한다.")]
+        public GameObject VictimPrefab;
         public List<PropPlacement> Props = new List<PropPlacement>();
 
         private readonly Dictionary<string, PieceView> _pieces = new Dictionary<string, PieceView>();
@@ -320,10 +322,11 @@ namespace CaseFileOmission.Playtest
                 foreach (var npc in s.Npcs.GetByContract(s.CurrentContract.ContractId))
                 {
                     if (!s.Occupancy.HasPosition(npc.NpcId)) continue;
-                    bool lying = !npc.IsAlive;
-                    wanted[npc.NpcId] = (s.Occupancy.GetRoom(npc.NpcId), BodyKey(s, npc),
-                        $"{PlaytestTexts.TempName(s, npc.NpcId)}\n{PlaytestTexts.PublicRole(s, npc)}", TempLayoutV1.NpcMoveAnimationSpeed, lying,
-                        PlaytestTexts.FaceObject(npc.Personality));
+                    // 시신은 전용 모델(VictimPrefab)로 보인다. 모델이 없을 때만 피해자 몸체를 눕혀 대신한다.
+                    bool corpseModel = !npc.IsAlive && VictimPrefab != null;
+                    wanted[npc.NpcId] = (s.Occupancy.GetRoom(npc.NpcId), corpseModel ? "victim" : BodyKey(s, npc),
+                        $"{PlaytestTexts.TempName(s, npc.NpcId)}\n{PlaytestTexts.PublicRole(s, npc)}", TempLayoutV1.NpcMoveAnimationSpeed,
+                        !npc.IsAlive && !corpseModel, corpseModel ? null : PlaytestTexts.FaceObject(npc.Personality));
                 }
 
                 foreach (var police in PoliceRoster.AllPoliceIds)
@@ -704,13 +707,25 @@ namespace CaseFileOmission.Playtest
                 "player" => PlayerPrefab,
                 "police" => PolicePrefab,
                 "criminal" => CriminalPrefab,
+                "victim" => VictimPrefab,
                 _ => NpcBodyPrefabs.ElementAtOrDefault(body[3] - '0')
             };
 
             var holder = new GameObject("Model").transform;
             holder.SetParent(root, false);
             GameObject model;
-            if (prefab != null)
+            if (prefab != null && body == "victim")
+            {
+                // 누운 모델: 가장 긴 수평 길이를 눕힌 말(서 있는 NPC 높이)과 맞추고, 말 위치가 몸 가운데가 되게 옮긴다.
+                model = Instantiate(prefab, holder);
+                var bounds = RenderBounds(model);
+                float length = Mathf.Max(bounds.size.x, bounds.size.z);
+                float scale = length > 1e-5f ? PieceTargetHeight * 0.8f / length : 1f;
+                model.transform.localScale *= scale;
+                bounds = RenderBounds(model);
+                model.transform.position += new Vector3(holder.position.x - bounds.center.x, holder.position.y - bounds.min.y, holder.position.z - bounds.center.z);
+            }
+            else if (prefab != null)
             {
                 model = Instantiate(prefab, holder);
                 var bounds = RenderBounds(model);
