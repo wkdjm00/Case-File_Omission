@@ -42,7 +42,7 @@ namespace CaseFileOmission.Game
     /// 1) <see cref="OfferContract"/> — 조직이 전화로 의뢰를 제안한다. 조직 조건은 이때 공개된다.
     /// 2) <see cref="AcceptContract"/> — 수락하면 조건이 고정되고 담당 경찰 1명이 배정되며 조사가 시작된다.
     ///    조직_01(자살 위장 조건 의뢰)은 이 시점에 검사한다.
-    /// 3) 조사 — 아침·저녁 구간마다 12칸. 이동·방 조사·대화·회유·사격·재장전이 칸을 쓰고, 쓴 칸만큼 NPC가 행동한다.
+    /// 3) 조사 — 각 세계 시간대는 12시간이고 플레이어 조사 예산은 8시간(32칸)이다. 시간 소모 행동만큼 NPC가 행동한다.
     ///    구간이 끝나면(예산 소진 또는 <see cref="EndInvestigationEarly"/>) <see cref="StartMeeting"/> 또는 <see cref="AdvanceToNextTimeBlock"/>.
     /// 4) 회의 — 카드 제시·의문 대응·차례 넘기기, <see cref="ProposeConclusion"/>로 결론(과반 채택 / 추가 검증 / 미제).
     ///    결론 없이 <see cref="LeaveMeeting"/>하면 다음 구간 조사로 돌아가고, 보류한 의문은 다음 회의에서 먼저 처리한다.
@@ -58,13 +58,13 @@ namespace CaseFileOmission.Game
         /// <summary>06·07 2026-11-13 확정: 세계 시각 15분마다 NPC 의사결정 1턴. 조사 예산 1칸도 15분이다.</summary>
         public const int NpcMinutesPerTimeSlot = GameStateController.SlotMinutes;
 
-        // 06 2026-11-11/12 확정 행동 비용(칸 = 15분). 별도 예외가 없는 시간 소모 행동은 기본 1시간(4칸).
+        // 06 2026-11-11/12 확정 행동 비용(칸 = 15분). 이미 확보한 자료 열람과 UI 조작은 시간 비용 0.
         public const int MoveCost = 0;
         public const int TalkCost = 2;
         public const int ObserveCost = 2;
         public const int OverhearCost = 2;
         public const int InvestigateCost = 4;
-        public const int ReadDocumentCost = 4;
+        public const int ReadDocumentCost = 0;
         public const int DropClueCost = 1;
         public const int DefaultActionCost = 4;
 
@@ -233,7 +233,7 @@ namespace CaseFileOmission.Game
 
         /// <summary>
         /// 조직의 의뢰 제안. 진실 → 유형 → 조직 조건 → 인물·시간표·단서 → 검증 순으로 만든다.
-        /// 후보 10개 × 검증 3회 안에 검증을 통과한 의뢰가 없으면 예외 없이 null을 돌려준다(생성 실패, 플레이어에게 제공하지 않음).
+        /// 후보 최대 3개 × 각 후보 검증 최대 3회 안에 검증을 통과한 의뢰가 없으면 예외 없이 null을 돌려준다(생성 실패, 플레이어에게 제공하지 않음).
         /// </summary>
         public GeneratedContract OfferContract()
         {
