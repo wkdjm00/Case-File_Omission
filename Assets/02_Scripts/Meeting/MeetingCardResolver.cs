@@ -23,6 +23,7 @@ namespace CaseFileOmission.Meeting
         public string PresenterId;
         public string ClueId;
         public bool PresenterIsLying;
+        public bool PresenterUsedDistortion;
         public CardQuestionState State = CardQuestionState.Open;
         public int AdditionalVerificationsUsed;
 
@@ -46,6 +47,12 @@ namespace CaseFileOmission.Meeting
         public QuestionActionOutcome Outcome;
         public CardQuestionState State;
         public SuspicionDeltaOutcome SuspicionDelta;
+        public string ActionEventId;
+        public string PresenterId;
+        public string JudgeId;
+        public string ClueId;
+        public bool PresenterIsLying;
+        public bool PresenterUsedDistortion;
     }
 
     public sealed class CardPresentationResolution
@@ -199,7 +206,8 @@ namespace CaseFileOmission.Meeting
                         JudgeId = judge.JudgeId,
                         PresenterId = card.PresenterId,
                         ClueId = card.ClueId,
-                        PresenterIsLying = presenterIsLying
+                        PresenterIsLying = presenterIsLying,
+                        PresenterUsedDistortion = card.Manipulation == CardManipulation.Distort
                     };
                     _questions[question.QuestionId] = question;
                     resolution.OpenedQuestions.Add(question);
@@ -327,6 +335,7 @@ namespace CaseFileOmission.Meeting
                         PresenterId = q.PresenterId,
                         ClueId = q.ClueId,
                         PresenterIsLying = q.PresenterIsLying,
+                        PresenterUsedDistortion = q.PresenterUsedDistortion,
                         State = q.State,
                         AdditionalVerificationsUsed = q.AdditionalVerificationsUsed,
                         DeferCount = q.DeferCount
@@ -366,6 +375,7 @@ namespace CaseFileOmission.Meeting
                     PresenterId = q.PresenterId,
                     ClueId = q.ClueId,
                     PresenterIsLying = q.PresenterIsLying,
+                    PresenterUsedDistortion = q.PresenterUsedDistortion,
                     State = q.State,
                     AdditionalVerificationsUsed = q.AdditionalVerificationsUsed,
                     DeferCount = q.DeferCount
@@ -408,7 +418,18 @@ namespace CaseFileOmission.Meeting
                 ? _session.RecordAccepted(actionEventId, question.JudgeId, question.PresenterId, verified: true)
                 : null;
 
-            return new QuestionActionResult { Outcome = QuestionActionOutcome.Applied, State = question.State, SuspicionDelta = delta };
+            return new QuestionActionResult
+            {
+                Outcome = QuestionActionOutcome.Applied,
+                State = question.State,
+                SuspicionDelta = delta,
+                ActionEventId = actionEventId,
+                PresenterId = question.PresenterId,
+                JudgeId = question.JudgeId,
+                ClueId = question.ClueId,
+                PresenterIsLying = question.PresenterIsLying,
+                PresenterUsedDistortion = question.PresenterUsedDistortion
+            };
         }
 
         private bool TryGetActionable(string actionEventId, string questionId, out CardQuestion question, out QuestionActionResult rejected)
