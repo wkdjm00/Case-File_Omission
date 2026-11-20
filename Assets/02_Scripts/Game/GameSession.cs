@@ -705,25 +705,84 @@ namespace CaseFileOmission.Game
         /// 부재 발견(06): 그 물건을 아는(그 자료의 사실을 보유한) 살아 있는 NPC가 그 방에 있으면 물건이 없어진 것을 알게 된다.
         /// '없어졌다'는 정보만 주고 범인은 확정하지 않는다. 같은 물건의 부수사건은 하나이며 발견자는 NPC별로 덧붙인다. 15분 턴마다 호출.
         /// </summary>
-        /// <summary>
-        /// NPC 신고(사용자 확정 2026-11-20 임시 효과): 플레이어의 절도·시신 탈취를 직접 본 NPC가 담당 경찰과 같은 방에 있으면 그 목격을 경찰에 전달한다.
-        /// 부수사건의 목격자 목록에 경찰을 더하고 이벤트로 남긴다(목격자·사건마다 한 번). 의심도 수치는 노션에 없어 바꾸지 않는다.
-        /// </summary>
-        private void ReportWitnessedCrimesToPolice()
+        private string NpcReportEventId(string npcId, string infoId) =>
+            $"npc-report:{CurrentContract?.ContractId}:{npcId}:{StableSeed(infoId ?? string.Empty)}";
+
+        public bool HasNpcReportedInfo(string npcId, string infoId)
         {
+            string eventId = NpcReportEventId(npcId, infoId);
+            return State.EventLog.GetOrdered().Any(e => e.EventId == eventId);
+        }
+
+        /// <summary>
+        /// 살아 있는 NPC가 직접 목격·관찰한 사건 정보를 담당 경찰에게 같은 방에서 신고한다.
+        /// 다른 NPC에게서 들은 소문은 이 자동 신고 경로로 전달하지 않는다.
+        /// 신고 1건은 NPC·정보별로 한 번만 기록하며, 실제 진실이나 의심도는 변경하지 않는다.
+        /// </summary>
+        public bool ReportNpcInfoToPolice(string npcId, string infoId, string roomId, int minute)
+        {
+            if (CurrentContract == null || string.IsNullOrEmpty(npcId) || string.IsNullOrEmpty(infoId)
+                || !Npcs.Exists(npcId) || !Npcs.Get(npcId).IsAlive || !Occupancy.HasPosition(npcId)
+                || Occupancy.GetRoom(npcId) != roomId)
+                return false;
+
             string police = HandlerPoliceId;
-            if (CurrentContract == null || police == null || !PoliceLife.IsAlive(police) || !Occupancy.HasPosition(police)) return;
-            string room = Occupancy.GetRoom(police);
-            foreach (var incident in Campaign.TheftIncidents)
+            if (string.IsNullOrEmpty(police) || !PoliceLife.IsAlive(police) || !Occupancy.HasPosition(police)
+                || Occupancy.GetRoom(police) != roomId)
+                return false;
+
+            var reporter = Npcs.Get(npcId);
+            var record = reporter.InfoHistory.LastOrDefault(r => r.InfoId == infoId);
+            if (record == null || record.State != NpcInformationState.KnowsFact
+                || string.IsNullOrEmpty(record.SourceEventId) || !reporter.Knows(infoId))
+                return false;
+
+            bool firsthand = reporter.WitnessedEventIds.Contains(record.SourceEventId)
+                || infoId.StartsWith("missing:", StringComparison.Ordinal);
+            if (!firsthand)
+                return false;
+
+            string reportEventId = NpcReportEventId(npcId, infoId);
+            if (!State.EventLog.TryRecord(new GameEvent(
+                    reportEventId, GameEventType.Custom, CurrentContract.ContractId, police)))
+                return false;
+
+            var linked = Materials.FirstOrDefault(m => m.ContractId == CurrentContract.ContractId
+                && m.StatedInfoIds.Contains(infoId));
+            string materialId = $"npc-report-material:{CurrentContract.ContractId}:{npcId}:{StableSeed(infoId)}";
+            if (!Materials.Any(m => m.MaterialId == materialId))
             {
-                foreach (var witness in incident.WitnessIds.ToList())
+                var report = new EvidenceMaterial
                 {
-                    if (!Npcs.Exists(witness) || !Npcs.Get(witness).IsAlive || !Occupancy.HasPosition(witness) || Occupancy.GetRoom(witness) != room) continue;
-                    if (!State.EventLog.TryRecord(new GameEvent($"reported:{incident.IncidentId}:{witness}", GameEventType.Custom, CurrentContract.ContractId, police)))
-                        continue;
-                    if (!incident.WitnessIds.Contains(police)) incident.WitnessIds.Add(police);
-                }
+                    MaterialId = materialId,
+                    ContractId = CurrentContract.ContractId,
+                    Format = ClueFormat.Testimony,
+                    TruthStatus = ClueTruthStatus.Factual,
+                    SourceNpcId = npcId,
+                    RoomId = roomId,
+                    Acquisition = MaterialAcquisition.TalkToNpc,
+                    AboutEventId = record.SourceEventId,
+                    AboutMinute = record.Minute ?? minute,
+                    AboutRoomId = roomId,
+                    SubjectNpcId = linked?.SubjectNpcId,
+                    IdentifiesPerpetrator = linked?.IdentifiesPerpetrator ?? false,
+                    IsDirectPerpetratorEvidence = false,
+                    Title = $"{reporter.DisplayName ?? npcId}의 신고 진술",
+                    Content = linked != null && !string.IsNullOrWhiteSpace(linked.Content)
+                        ? $"{reporter.DisplayName ?? npcId}: \"{linked.Content}\""
+                        : $"{reporter.DisplayName ?? npcId}: 사건 정보를 직접 목격·관찰했다고 신고했다."
+                };
+                report.StatedInfoIds.Add(infoId);
+                Materials.Add(report);
+                TryAcquirePoliceMaterial(police, report);
             }
+
+            foreach (var incident in Campaign.TheftIncidents.Where(i =>
+                         i.IncidentId == record.SourceEventId || i.IncidentId == infoId))
+                if (!incident.WitnessIds.Contains(police))
+                    incident.WitnessIds.Add(police);
+
+            return true;
         }
 
         private void CheckTheftAbsence()
@@ -2048,7 +2107,6 @@ namespace CaseFileOmission.Game
                 PerpetratorSilencingTurn();
                 LivingVictimsFollowPolice();
                 CheckTheftAbsence();
-                ReportWitnessedCrimesToPolice();
                 // 07 3-3: 추적 발동 다음 턴부터 경찰 정보 수집 단계(기존 조사 흐름 — 별도 미니게임 없음).
                 if (Pursuit.Stage == PursuitStage.Triggered)
                     Pursuit.AdvanceToGatheringInformation();
