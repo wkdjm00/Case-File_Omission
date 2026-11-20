@@ -1,3 +1,4 @@
+using System.Linq;
 using CaseFileOmission.Contracts;
 using CaseFileOmission.Evidence;
 
@@ -35,6 +36,16 @@ namespace CaseFileOmission.Organization
                     if (!contract.OfficialConclusion.IsFinalized)
                         return null;
                     return contract.OfficialConclusion.Outcome == ContractOutcome.Unsolved;
+
+                case OrganizationConditionType.DisguiseAsSuicide:
+                    if (!contract.OfficialConclusion.IsFinalized)
+                        return null;
+                    return contract.OfficialConclusion.Outcome == ContractOutcome.ResolvedAsSuicide;
+
+                case OrganizationConditionType.ConcealCulpritClues:
+                    // 05: 지정한 2개가 사건 종료 시 모두 은폐 상태. 보드 치우기·폐기는 은폐가 아니다.
+                    return condition.TargetIds.Count == 2
+                           && condition.TargetIds.All(id => clueRepository.Exists(id) && clueRepository.GetRecord(id).IsConcealed);
 
                 default:
                     return null;

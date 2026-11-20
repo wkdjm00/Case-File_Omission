@@ -61,7 +61,13 @@ namespace CaseFileOmission.Contracts
         RecoverBody,
         RecoverItem,
         DesignateOfficialCulprit,
-        KeepUnsolved
+        KeepUnsolved,
+
+        /// <summary>05: 사망 사건을 자살로 위장 — 공식 결론이 '자살'로 확정되면 달성(실제 진실은 바꾸지 않음).</summary>
+        DisguiseAsSuicide,
+
+        /// <summary>05: 범인을 특정할 단서 2개를 은폐한 채 사건 종료 — 지정 단서 2개가 종료 시 모두 은폐 상태면 달성.</summary>
+        ConcealCulpritClues
     }
 
     /// <summary>
@@ -82,6 +88,9 @@ namespace CaseFileOmission.Contracts
         Pending,
         Resolved,
         Unsolved,
-        HandlerPoliceDeceased
+        HandlerPoliceDeceased,
+
+        /// <summary>회의 과반으로 공식 결론이 '자살'로 확정됨(사용자 확정 2026-11-20). 실제 진실과 별개다.</summary>
+        ResolvedAsSuicide
     }
 }

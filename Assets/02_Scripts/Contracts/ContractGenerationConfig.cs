@@ -25,8 +25,8 @@ namespace CaseFileOmission.Contracts
         public int MaxRetriesPerElement = 5;
         [Tooltip("후보 하나의 전체 시도 횟수. 넘으면 후보를 폐기하고 새 후보를 만든다.")]
         public int MaxAttemptsPerCandidate = 3;
-        [Tooltip("사용자 확정(2026-11-10): 의뢰 후보는 최대 10개까지 생성한다. 모두 실패하면 생성 실패를 반환한다.")]
-        public int MaxCandidates = 10;
+        [Tooltip("04 2026-11-12 최종 계약(사용자 확인 2026-11-20, 이전 10개를 대체): 의뢰 후보는 최대 3개까지 검증한다. 모두 실패하면 GENERATION_FAILED.")]
+        public int MaxCandidates = 3;
 
         [Header("임시값 — 기획 미정")]
         [Tooltip("은폐 방식이 붙을 확률. 원문은 '은폐 없음 허용'까지만 정했다.")]
@@ -61,7 +61,7 @@ namespace CaseFileOmission.Contracts
             config.OrganizationConditionChance = 0.4f;
             config.MaxRetriesPerElement = 5;
             config.MaxAttemptsPerCandidate = 3;
-            config.MaxCandidates = 10;
+            config.MaxCandidates = 3;
             config.CoverUpChance = 0.5f;
 
             return config;

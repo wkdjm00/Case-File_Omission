@@ -23,6 +23,8 @@ namespace CaseFileOmission.Contracts
             OrganizationConditionType.RecoverItem,
             OrganizationConditionType.DesignateOfficialCulprit,
             OrganizationConditionType.KeepUnsolved,
+            OrganizationConditionType.DisguiseAsSuicide,
+            OrganizationConditionType.ConcealCulpritClues,
         };
 
         private readonly ContractGenerationConfig _config;
@@ -247,6 +249,10 @@ namespace CaseFileOmission.Contracts
             // 회수할 물건(범행 도구)이 있어야 한다.
             OrganizationConditionType.RecoverItem => !string.IsNullOrEmpty(instance.Truth?.Tool),
             OrganizationConditionType.DesignateOfficialCulprit => true,
+            // 05: 사망 사건이고 자살로 유도할 경로(숨진 피해자)가 있을 때만.
+            OrganizationConditionType.DisguiseAsSuicide => instance.PrimaryCrimeType == CrimeType.Murder,
+            // 05: 서로 다른 범인 특정 단서 2개 이상이 있어야 한다 — 자료 생성 뒤 대상 지정·검증에서 확인한다.
+            OrganizationConditionType.ConcealCulpritClues => true,
             OrganizationConditionType.KeepUnsolved => true,
             _ => false
         };

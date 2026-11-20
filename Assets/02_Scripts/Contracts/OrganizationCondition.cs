@@ -26,6 +26,19 @@ namespace CaseFileOmission.Contracts
             set { EnsureUnlocked(); _targetId = value; }
         }
 
+        private readonly System.Collections.Generic.List<string> _targetIds = new System.Collections.Generic.List<string>();
+
+        /// <summary>대상이 여럿인 조건(범인 특정 단서 2개 은폐)의 대상 단서 ID 목록. 잠금 뒤 변경 불가.</summary>
+        public System.Collections.Generic.IReadOnlyList<string> TargetIds => _targetIds;
+
+        public void SetTargetIds(System.Collections.Generic.IEnumerable<string> ids)
+        {
+            EnsureUnlocked();
+            _targetIds.Clear();
+            foreach (var id in ids ?? System.Linq.Enumerable.Empty<string>())
+                if (!string.IsNullOrEmpty(id) && !_targetIds.Contains(id)) _targetIds.Add(id);
+        }
+
         /// <summary>회수만 요구하는지, 조직에 전달까지 요구하는지 구분.</summary>
         public bool RequiresDeliveryToOrganization
         {

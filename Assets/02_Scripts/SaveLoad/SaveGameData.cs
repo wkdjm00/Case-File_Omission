@@ -47,5 +47,15 @@ namespace CaseFileOmission.SaveLoad
 
         /// <summary>세부 월드 상태. 예전 저장 파일에는 없을 수 있다(Version 0 또는 null).</summary>
         public WorldSaveData World;
+
+        // 06 「2026-11-13 저장/불러오기·버전·복구 구현 계약」 메타데이터. 예전 파일에는 없다(0·null).
+        public int SchemaVersion;
+        /// <summary>한 플레이(새 게임)마다 다른 ID.</summary>
+        public string RunId;
+        /// <summary>같은 플레이 안에서 저장할 때마다 1씩 오른다(슬롯 사이 최신 판별).</summary>
+        public int SaveSequence;
+        public string SavedAtUtc;
+        /// <summary>저장된 슬롯(수동 1~3, 자동 0).</summary>
+        public int Slot;
     }
 }

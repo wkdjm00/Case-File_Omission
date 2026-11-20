@@ -287,6 +287,7 @@ namespace CaseFileOmission.NPC
         private readonly Dictionary<string, NpcSchedule> _schedules = new Dictionary<string, NpcSchedule>();
         private readonly List<INpcBehaviorCandidateSource> _sources = new List<INpcBehaviorCandidateSource>();
         private readonly Dictionary<string, int> _blockedTurns = new Dictionary<string, int>();
+        private readonly Dictionary<string, string> _blockedTarget = new Dictionary<string, string>();
 
         /// <summary>막힘이 3턴을 넘어 이동을 멈춘 목적지. 목적지는 유지하고, 길이 열릴 때까지 그 이동을 후보에 올리지 않는다.</summary>
         private readonly Dictionary<string, string> _suspendedMoveTarget = new Dictionary<string, string>();
@@ -508,11 +509,17 @@ namespace CaseFileOmission.NPC
             var path = _rooms.FindPath(room, chosen.TargetId, IsRoomBlocked);
             if (path == null || path.Count == 0)
             {
-                int blocked = (_blockedTurns.TryGetValue(actor.NpcId, out int b) ? b : 0) + 1;
-                if (blocked > MaxBlockedWaitTurns)
-                {
-                    // 3턴을 넘기면 이 이동을 반복하지 않는다. 목적지는 유지한다(긴급하지 않은 이동).
+                // 07 「행동 우선순위 및 경로 막힘」: 막힘 횟수는 현재 이동 목표에 묶는다. 목적지가 바뀌면 0부터 다시 센다.
+                if (!_blockedTarget.TryGetValue(actor.NpcId, out var lastTarget) || lastTarget != chosen.TargetId)
                     _blockedTurns.Remove(actor.NpcId);
+                _blockedTarget[actor.NpcId] = chosen.TargetId;
+
+                int blocked = (_blockedTurns.TryGetValue(actor.NpcId, out int b) ? b : 0) + 1;
+                if (blocked >= MaxBlockedWaitTurns)
+                {
+                    // 같은 목표가 막힘 3턴에 도달하면 이 이동을 반복하지 않는다(1~2턴은 기다림). 목적지는 보류로 유지한다.
+                    _blockedTurns.Remove(actor.NpcId);
+                    _blockedTarget.Remove(actor.NpcId);
                     _suspendedMoveTarget[actor.NpcId] = chosen.TargetId;
                     result.Status = NpcBehaviorStatus.MoveSuspendedAfterBlocked;
                 }
@@ -525,6 +532,7 @@ namespace CaseFileOmission.NPC
             }
 
             _blockedTurns.Remove(actor.NpcId);
+            _blockedTarget.Remove(actor.NpcId);
             _suspendedMoveTarget.Remove(actor.NpcId);
             _occupancy.TryMove(actor.NpcId, path[0]);
             result.TargetId = path[0];

@@ -85,13 +85,24 @@ namespace CaseFileOmission.Playtest
                 OrganizationConditionType.RecoverItem => "특정 물품을 회수해 조직에 넘길 것",
                 OrganizationConditionType.DesignateOfficialCulprit => "지정한 인물을 공식 가해자로 만들 것",
                 OrganizationConditionType.KeepUnsolved => "사건을 미제로 남길 것",
+                OrganizationConditionType.DisguiseAsSuicide => "사망 사건을 자살로 결론 내리게 할 것(회의에서 자살 결론 과반)",
+                OrganizationConditionType.ConcealCulpritClues => "범인을 특정할 단서 2개를 은폐한 채 사건을 끝낼 것",
                 _ => c.Type.ToString()
             };
+            if (c.TargetIds.Count > 0)
+                target = " (대상: " + string.Join(", ", c.TargetIds.Select(id => TargetName(s, id))) + ")";
             return text + target;
         }
 
-        private static string TargetName(GameSession s, string id) =>
-            s.Npcs.Exists(id) ? TempName(s, id) : "지정 물품";
+        /// <summary>조건 대상 이름. 물품·시신은 자료 이름과 놓인 곳(방·조사 대상)까지 밝혀 무엇을 가져와야 하는지 알 수 있게 한다.</summary>
+        private static string TargetName(GameSession s, string id)
+        {
+            if (s.Npcs.Exists(id)) return TempName(s, id);
+            var m = FindMaterial(s, id) ?? s.PendingOffer?.GetMaterial(id);
+            if (m == null) return "지정 물품";
+            string where = m.RoomId == null ? "" : $" — {Room(m.RoomId)}{(m.ObjectId != null ? " " + CaseCatalog.ObjectName(m.ObjectId) : "")}";
+            return (m.Title ?? Format(m.Format) + " 자료") + where;
+        }
 
         public static string Personality(NpcPersonality p) => p switch
         {

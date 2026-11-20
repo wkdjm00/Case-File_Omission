@@ -552,6 +552,29 @@ namespace CaseFileOmission.Playtest
             return best.Kind;
         }
 
+        /// <summary>그 인물 말이 지금 걷는 중인지(사격 '빠른 표적' 임시 판정).</summary>
+        public bool IsPieceMoving(string occupantId) => _pieces.TryGetValue(occupantId, out var p) && p.IsMoving;
+
+        /// <summary>두 인물 사이 직선에 다른 인물 말이 끼어 있는지(사격 '부분 가림' 임시 판정, 반경 0.35 m).</summary>
+        public bool IsLineBlocked(string fromId, string toId)
+        {
+            if (!_pieces.TryGetValue(fromId, out var a) || !_pieces.TryGetValue(toId, out var b)) return false;
+            Vector3 p0 = a.transform.position, p1 = b.transform.position;
+            p0.y = p1.y = 0;
+            var seg = p1 - p0;
+            float len2 = seg.sqrMagnitude;
+            if (len2 < 1e-4f) return false;
+            foreach (var pair in _pieces)
+            {
+                if (pair.Key == fromId || pair.Key == toId || !pair.Value.gameObject.activeSelf) continue;
+                var q = pair.Value.transform.position; q.y = 0;
+                float t = Mathf.Clamp01(Vector3.Dot(q - p0, seg) / len2);
+                if (t <= 0f || t >= 1f) continue;
+                if ((p0 + seg * t - q).sqrMagnitude <= 0.35f * 0.35f) return true;
+            }
+            return false;
+        }
+
         public Vector3? PiecePosition(string occupantId) => _pieces.TryGetValue(occupantId, out var p) ? p.transform.position : (Vector3?)null;
         public Vector3? ObjectPosition(string objectId) => _objectMarkers.TryGetValue(objectId, out var t) && t != null ? t.position : (Vector3?)null;
 

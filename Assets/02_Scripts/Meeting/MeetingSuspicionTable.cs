@@ -49,6 +49,12 @@ namespace CaseFileOmission.Meeting
             };
         }
 
+        /// <summary>
+        /// 보류한 의문을 다음 회의에서도 처리하지 않고 넘겼을 때 상승량(사용자 확정 2026-11-20, 이전 확정값 복구).
+        /// 일반 차례 넘기기·대응 실패·포기 수치와 중복 적용하지 않는다.
+        /// </summary>
+        public const float CarriedOverDeferIncrease = 10f;
+
         /// <summary>대응 포기 시 의심도 상승량(연속 횟수 기준).</summary>
         public static float ConsecutiveGiveUpIncrease(int consecutiveGiveUpCount)
         {

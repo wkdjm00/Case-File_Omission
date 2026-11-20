@@ -368,6 +368,28 @@ namespace CaseFileOmission.ContractContent
                 {
                     Add(ContractValidationErrorCode.CLUE_UNREACHABLE);
                 }
+                else
+                {
+                    // 04 AI 계약 §6 LOCATION_ACCESS·EVIDENCE_TRACE: 조사 자료가 놓인 대상은 그 방의 대상이어야 하고,
+                    // 방은 현관 홀(시작 공간)에서 실제로 갈 수 있어야 한다.
+                    if (m.ObjectId != null && CaseCatalog.ObjectRoom(m.ObjectId) is string objectRoom && objectRoom != m.RoomId)
+                        Add(ContractValidationErrorCode.CLUE_UNREACHABLE);
+                    if (m.RoomId != HouseLayoutFactory.EntranceHall && rooms.RoomExists(HouseLayoutFactory.EntranceHall)
+                        && rooms.FindPath(HouseLayoutFactory.EntranceHall, m.RoomId) == null)
+                        Add(ContractValidationErrorCode.CLUE_UNREACHABLE);
+                }
+
+                // 선행 자료 사슬: 먼저 있어야 하는 자료가 실제로 있고, 사슬이 자기 자신으로 돌아오지 않아야 한다.
+                if (!string.IsNullOrEmpty(m.RequiresClueId))
+                {
+                    var seen = new HashSet<string> { m.MaterialId };
+                    string next = m.RequiresClueId;
+                    while (next != null)
+                    {
+                        if (!seen.Add(next) || !byId.TryGetValue(next, out var prerequisite)) { Add(ContractValidationErrorCode.CLUE_UNREACHABLE); break; }
+                        next = string.IsNullOrEmpty(prerequisite.RequiresClueId) ? null : prerequisite.RequiresClueId;
+                    }
+                }
 
                 // 시간·장소: 사건에 관한 사실 자료는 그 사건의 시각·장소와 일치해야 한다.
                 if (m.AboutEventId != null)

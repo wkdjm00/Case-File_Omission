@@ -25,6 +25,9 @@ namespace CaseFileOmission.Meeting
         public CardQuestionState State = CardQuestionState.Open;
         public int AdditionalVerificationsUsed;
 
+        /// <summary>보류된 횟수(회의를 넘어 누적). 저장한다.</summary>
+        public int DeferCount;
+
         public bool IsClosed => State != CardQuestionState.Open && State != CardQuestionState.Deferred;
     }
 
@@ -266,8 +269,33 @@ namespace CaseFileOmission.Meeting
             if (question.IsClosed)
                 return new QuestionActionResult { Outcome = QuestionActionOutcome.AlreadyClosed, State = question.State };
 
+            if (question.State == CardQuestionState.Deferred)
+                return new QuestionActionResult { Outcome = QuestionActionOutcome.Duplicate, State = question.State };
+
             question.State = CardQuestionState.Deferred;
-            return new QuestionActionResult { Outcome = QuestionActionOutcome.Applied, State = question.State };
+            question.DeferCount++;
+            // 이전 회의에서 넘어온 의문을 이번에도 넘기면 +10(사용자 확정 2026-11-20). 의심하는 쪽은 의문 제기자, 대상은 제시자(플레이어만).
+            SuspicionDeltaOutcome delta = _carriedOverQuestionIds.Contains(question.QuestionId) && question.PresenterId == _playerId
+                ? _session.RecordCarriedOverDeferred($"defer-again:{question.QuestionId}", question.JudgeId, question.PresenterId)
+                : null;
+            return new QuestionActionResult { Outcome = QuestionActionOutcome.Applied, State = question.State, SuspicionDelta = delta };
+        }
+
+        /// <summary>
+        /// 회의를 마칠 때: 이전 회의에서 넘어와 이번 회의에서 아무 처리도 하지 않은 의문은 다시 넘긴 것으로 보고 보류 처리한다(+10).
+        /// 이번 회의에 새로 생긴 열린 의문은 그대로 다음 회의로 넘어간다.
+        /// </summary>
+        public List<SuspicionDeltaOutcome> DeferUnhandledCarriedOver()
+        {
+            var deltas = new List<SuspicionDeltaOutcome>();
+            foreach (var id in _carriedOverQuestionIds.ToList())
+            {
+                var q = _questions[id];
+                if (q.State != CardQuestionState.Open) continue;
+                var r = Defer(id);
+                if (r.SuspicionDelta != null) deltas.Add(r.SuspicionDelta);
+            }
+            return deltas;
         }
 
         private QuestionActionResult AcceptAfterVerification(string actionEventId, CardQuestion question)

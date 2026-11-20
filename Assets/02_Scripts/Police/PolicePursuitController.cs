@@ -55,23 +55,24 @@ namespace CaseFileOmission.Police
             _eventLog = eventLog;
         }
 
-        public bool CheckTriggerConditionMet(string playerId)
+        /// <param name="alivePoliceIds">살아 있는 경찰. 사망한 경찰의 의심도는 세지 않는다. null이면 5명 전원.</param>
+        public bool CheckTriggerConditionMet(string playerId, IEnumerable<string> alivePoliceIds = null)
         {
-            int highSuspicionCount = PoliceRoster.AllPoliceIds
-                .Count(policeId => _suspicionService.GetSuspicion(policeId, playerId) >= 70f);
-            return highSuspicionCount >= 3;
+            int highSuspicionCount = (alivePoliceIds ?? PoliceRoster.AllPoliceIds)
+                .Count(policeId => _suspicionService.GetSuspicion(policeId, playerId) >= HighSuspicionThreshold);
+            return highSuspicionCount >= TriggerCount;
         }
 
         /// <summary>
         /// 추가 사망 사건 발생 시 호출한다. deathEventId로 중복 발동을 막는다
         /// (같은 사망 사건으로 추적이 두 번 시작되지 않도록 한다).
         /// </summary>
-        public bool TryTrigger(string playerId, string deathEventId)
+        public bool TryTrigger(string playerId, string deathEventId, IEnumerable<string> alivePoliceIds = null)
         {
             if (Stage != PursuitStage.NotActive)
                 return false;
 
-            if (!CheckTriggerConditionMet(playerId))
+            if (!CheckTriggerConditionMet(playerId, alivePoliceIds))
                 return false;
 
             // 사망 이벤트 자체가 같은 로그에 이미 기록되어 있어도 추적 발동은 따로 판정해야 하므로 별도 키를 쓴다.

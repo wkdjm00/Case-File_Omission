@@ -17,11 +17,33 @@ namespace CaseFileOmission.NPC
         public float ProbabilityUsed;
     }
 
+    /// <summary>전달하는 정보와 전달자의 관계(07 2026-11-12 §3 실제 역할 보정 조건).</summary>
+    public enum InfoSenderRelation
+    {
+        None,
+
+        /// <summary>본인의 범행·가해자 정체를 드러내거나 그 판단을 유의미하게 뒷받침하는 정보.</summary>
+        IncriminatesSender,
+
+        /// <summary>본인이 직접 겪은 사건 사실(생존 피해자).</summary>
+        OwnExperience,
+
+        /// <summary>본인이 직접 목격한 사건 사실.</summary>
+        DirectlyWitnessed
+    }
+
     /// <summary>
-    /// 07페이지 2026-11-09 구현 명세 확정 표와 2026-11-10 추가 확정(의심 구간 경계, 질투·의존 보정)을 그대로 구현한다.
+    /// 07 「2026-11-12 — NPC 정보 전달 확률 보정값 최종 확정」을 구현한다(2026-11-09·11-10 표보다 우선).
+    /// 기본 50%, 성격 1개 → 역할 1개 → 전달자→수신자 의심 → 독립 상황 보정 순으로 합산 후 5~95%.
     /// </summary>
     public sealed class NpcInfoTransferService
     {
+        /// <summary>
+        /// 정보와 전달자의 관계 판정. 게임 진행 계층이 사건 데이터로 정한다. 없으면 기본 판정:
+        /// 실제 가해자는 자기 범행 관련으로, 그 밖에는 전달자가 직접 목격한 사건 ID와 같은 정보면 목격(생존 피해자는 직접 경험)으로 본다.
+        /// </summary>
+        public Func<NpcState, string, InfoSenderRelation> RelationOf;
+
         private const float BaseChance = 50f;
         private const float MinChance = 5f;
         private const float MaxChance = 95f;
@@ -34,6 +56,14 @@ namespace CaseFileOmission.NPC
             if (suspicion >= 35f) return SuspicionLevel.Strong;
             if (suspicion >= 10f) return SuspicionLevel.Weak;
             return SuspicionLevel.None;
+        }
+
+        private static InfoSenderRelation DefaultRelation(NpcState sender, string infoId)
+        {
+            if (sender.IsActualPerpetrator) return InfoSenderRelation.IncriminatesSender;
+            if (sender.WitnessedEventIds.Contains(infoId))
+                return sender.ActualRole == NpcActualRole.Victim ? InfoSenderRelation.OwnExperience : InfoSenderRelation.DirectlyWitnessed;
+            return InfoSenderRelation.None;
         }
 
         private readonly Random _random;
@@ -80,22 +110,29 @@ namespace CaseFileOmission.NPC
 
             var modifiers = new List<float>();
 
+            // §2 공식 성격 보정(하나만). 무관심·욕심(성격 자체)은 0, 맹목적으로 믿는은 등록된 신뢰 대상에게만.
+            // 신뢰 관계 데이터가 없으면 모든 상대를 신뢰 대상으로 처리하지 않는다(receiverIsTrustedBySender 기본 false).
             switch (sender.Personality)
             {
-                case NpcPersonality.Secretive: modifiers.Add(-20f); break;
-                case NpcPersonality.Timid: modifiers.Add(-10f); break;
                 case NpcPersonality.Suspicious: modifiers.Add(-10f); break;
-                case NpcPersonality.Indifferent: modifiers.Add(-10f); break;
+                case NpcPersonality.Timid: modifiers.Add(-10f); break;
+                case NpcPersonality.FrequentLiar: modifiers.Add(-10f); break;
+                case NpcPersonality.Secretive: modifiers.Add(-20f); break;
                 case NpcPersonality.Guilty: modifiers.Add(10f); break;
-                case NpcPersonality.BlindlyTrusting: modifiers.Add(15f); break;
-                // 07 2026-11-10 확정: 질투하는 -5%p, 의존하는은 신뢰 대상에게 +15%p·그 외 -5%p.
-                // 신뢰 관계 데이터가 없으면 모든 상대를 신뢰 대상으로 처리하지 않는다(receiverIsTrustedBySender 기본 false).
+                case NpcPersonality.BlindlyTrusting: if (receiverIsTrustedBySender) modifiers.Add(15f); break;
                 case NpcPersonality.Jealous: modifiers.Add(-5f); break;
                 case NpcPersonality.Dependent: modifiers.Add(receiverIsTrustedBySender ? 15f : -5f); break;
             }
 
+            // §3 실제 역할 보정(조건에 맞는 하나만). 가해자는 목격자 보정을 추가로 받지 않는다.
+            var relation = RelationOf?.Invoke(sender, infoId) ?? DefaultRelation(sender, infoId);
+            bool roleExposure = false;
             if (sender.IsActualPerpetrator)
-                modifiers.Add(-15f);
+            {
+                if (relation == InfoSenderRelation.IncriminatesSender) { modifiers.Add(-15f); roleExposure = true; }
+            }
+            else if (relation == InfoSenderRelation.OwnExperience || relation == InfoSenderRelation.DirectlyWitnessed)
+                modifiers.Add(10f); // 생존 피해자의 직접 경험 / 직접 목격자의 목격 사실
 
             switch (senderSuspicionTowardReceiver)
             {
@@ -103,8 +140,9 @@ namespace CaseFileOmission.NPC
                 case SuspicionLevel.Weak: modifiers.Add(-5f); break;
             }
 
+            // §5 상황 보정. 역할 보정에 이미 반영한 자기 범행 노출 위험은 같은 이유로 다시 계산하지 않는다.
             if (hasConcreteBenefit) modifiers.Add(10f);
-            if (hasExposureRisk) modifiers.Add(-15f);
+            if (hasExposureRisk && !roleExposure) modifiers.Add(-15f);
 
             float finalChance = ProbabilityCalculator.ApplyModifiers(BaseChance, modifiers, MinChance, MaxChance);
             bool success = _random.NextDouble() * 100.0 < finalChance;

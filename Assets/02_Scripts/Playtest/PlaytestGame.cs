@@ -65,7 +65,6 @@ namespace CaseFileOmission.Playtest
         private MeetingScreen _meeting;
         private FinalReportScreen _finalReport;
 
-        public static string SavePath => System.IO.Path.Combine(Application.persistentDataPath, "p0_playtest_save.json");
 
         private void Awake()
         {
@@ -161,6 +160,7 @@ namespace CaseFileOmission.Playtest
                 _resultShownFor = null;
                 Log($"새 세션 시작(시드 {_seed}). 조카의 일기·사망 관련 보고서 확보.");
                 GoDesk();
+                AutoSave(); // 06: 새 게임 시작 직후 자동 저장
             }, true, 56, Ui.AccentColor);
             Ui.Button(body, "고정 테스트 사건 TEST_TEMP_CASE_001 (폭행 신고 → 실종)", () =>
             {
@@ -172,8 +172,9 @@ namespace CaseFileOmission.Playtest
                 _resultShownFor = null;
                 Log("고정 테스트 사건 TEST_TEMP_CASE_001 준비 — 전화를 받아 수락하세요.");
                 GoDesk();
-            }, true, 50);
-            Ui.Button(body, "불러오기", LoadGame, System.IO.File.Exists(SavePath));
+                AutoSave();
+            }, true, 50).gameObject.SetActive(Debug.isDebugBuild); // AI 계약: 고정 테스트 의뢰는 에디터·개발 빌드에서만
+            Ui.Button(body, "불러오기", () => OpenSlots(saving: false), AnySave);
             Ui.Line(body, "조작(현장): WASD 이동 · 마우스로 카메라 회전(Alt 누르는 동안 커서) · 휠로 거리 · 가까이 가서 E로 조사·대화 · Tab 조사 메뉴 / 책상: 물건 클릭 · F1 개발용 패널 · F5 저장 · F9 불러오기", 18, Ui.DimTextColor);
         }
 
@@ -216,6 +217,14 @@ namespace CaseFileOmission.Playtest
             _meeting.Open();
         }
 
+        /// <summary>화면 아래 대화창(09 §3)에 여러 화자의 대사를 한 장씩 보인다. 회의 반응·발언에도 쓴다.</summary>
+        public void ShowDialogue(IList<(string speaker, string line)> pages, IList<(string label, Action act)> choices = null)
+        {
+            if (pages == null || pages.Count == 0) return;
+            _dialogueOpenedFrame = Time.frameCount;
+            _field.ShowPages(pages, choices);
+        }
+
         public void CloseWindow()
         {
             Ui.Clear(WindowLayer);
@@ -240,6 +249,8 @@ namespace CaseFileOmission.Playtest
         public void AfterStateChange(bool animatePieces = true)
         {
             if (Session == null) return;
+            // 행동·시간·NPC 갱신, 의뢰 결과, 메인 서사 선택·엔딩이 확정된 직후 자동 저장(06). 회의 중에는 건너뛴다.
+            AutoSave();
             if (Session.Endings.ExecutedEnding.HasValue && Current != View.Ending && ShouldShowEnding())
             {
                 ShowEnding();
@@ -324,8 +335,8 @@ namespace CaseFileOmission.Playtest
             Ui.Button(panel, "타자기 — 최종 보고서(UI-404)", () => Interact(DeskObjectKind.Typewriter));
             Ui.Button(panel, RebelVisitDue ? "사무실을 나선다" : "현장으로 이동", () => Interact(DeskObjectKind.ToScene), Session.State.CurrentPhase == GamePhase.Investigation || RebelVisitDue);
             Ui.Line(panel, " ", 8);
-            Ui.Button(panel, "저장 (F5)", SaveGame, Session.CanSave);
-            Ui.Button(panel, "불러오기 (F9)", LoadGame, System.IO.File.Exists(SavePath));
+            Ui.Button(panel, "저장 (F5 = 현재 슬롯)", () => OpenSlots(saving: true), Session.CanSave);
+            Ui.Button(panel, "불러오기 (F9 = 최근)", () => OpenSlots(saving: false), AnySave);
             Ui.Button(panel, "타이틀로", ShowTitle);
         }
 
@@ -349,6 +360,45 @@ namespace CaseFileOmission.Playtest
             Ui.Line(content, $"현재 위치: {PlaytestTexts.Room(room)}", 24);
             Ui.Line(content, $"사건 현장: {PlaytestTexts.Room(s.Campaign.SceneRoomId)} (붉은 표식) · {PlaytestTexts.Crime(s.CurrentContract.PoliceCrimeType)} 사건", 18, Ui.DimTextColor);
             Ui.Line(content, $"{PlaytestTexts.TimeBlock(s.State.CurrentTimeBlock)} {s.State.CurrentDay}일차 · 시간대 끝 {PlaytestTexts.WorldClock(s, s.BlockEndMinute)} · 메인 사건 {StageName(s.MainCase.CurrentStage)}", 18, Ui.DimTextColor);
+
+            // 체크리스트 2-6: 조사 중에도 현재 의뢰의 보고서와 보유 단서를 확인·작성할 수 있게 한다(같은 보고서 화면).
+            Ui.Button(content, "의뢰 보고서 열기 (단서 확인·핵심 문장 작성)", () => OpenWindow(_report.Open), true, 46, Ui.AccentColor);
+            if (s.CanEmigrate)
+                Ui.Button(content, "해외로 도주한다 (이민 — 게임이 끝난다)", () => _field.ShowDialogue("이민", new[] { "\"모든 것을 두고 이 나라를 떠난다. 돌아올 수 없다.\"" },
+                    new List<(string, Action)> { ("떠난다", () => Act(s.Emigrate())), ("그만둔다", null) }), true, 46, Ui.AccentColor);
+            Ui.Line(content, $"권총: 장전 {s.Firearm.CurrentAmmo}발 · 남은 탄 {s.Firearm.ReserveAmmo}발 — F 사격(1시간) · R 재장전(1시간)", 18, Ui.DimTextColor);
+
+            // 06 §8 단서 버리기(15분, 현장에 남음, 보고서 기록 유지)·줍기(1시간).
+            var held = s.Clues.GetHeldByPlayerClueIds(s.CurrentContract.ContractId);
+            if (held.Count > 0)
+            {
+                Ui.Line(content, "— 단서 버리기 (15분 · 경찰 앞이면 발각) —", 18, Ui.DimTextColor);
+                foreach (var cid in held)
+                {
+                    string id = cid;
+                    Ui.Button(content, "버린다 — " + PlaytestTexts.MaterialTitle(s, id), () => Act(s.DropClue(id), "단서를 내려놓았다(보고서 기록은 남는다)."), !s.State.IsTimeBlockEnded, 40, null, 16);
+                }
+            }
+            foreach (var cid in s.DroppedCluesHere())
+            {
+                string id = cid;
+                Ui.Button(content, "줍는다 (1시간) — " + PlaytestTexts.MaterialTitle(s, id), () => Act(s.PickUpClue(id), "단서를 다시 챙겼다."), !s.State.IsTimeBlockEnded, 40, null, 16);
+            }
+
+            // 06 절도·시신 탈취: 조직 지정 물건·귀중품 속 물건·시신만. 같은 방 인물은 목격한다.
+            var stealable = s.StealableMaterialsHere();
+            if (stealable.Count > 0)
+            {
+                Ui.Line(content, "— 가져갈 수 있는 것 (같은 방 인물은 목격) —", 18, Ui.DimTextColor);
+                foreach (var m in stealable)
+                {
+                    string mid = m.MaterialId;
+                    bool body = s.IsBodyMaterial(mid);
+                    string label = body ? "시신을 치운다 (15분)"
+                        : $"훔친다 (1시간) — {(s.Clues.Exists(mid) ? PlaytestTexts.MaterialTitle(s, mid) : ContractContent.CaseCatalog.ObjectName(m.ObjectId) + " 안의 물건")}{(mid == s.CurrentContract.OrgCondition.TargetId ? " · 조직 지정" : "")}";
+                    Ui.Button(content, label, () => Act(s.Steal(mid), body ? "시신을 현장에서 치웠다." : "물건을 챙겼다."), !s.State.IsTimeBlockEnded, 44, null, 17);
+                }
+            }
 
             // 이동은 WASD로 한다(사용자 지정). 방을 옮겨도 시간은 들지 않는다(06: 이동 0시간).
             Ui.Line(content, "— 이동: WASD (0분) · 카메라: 마우스(메뉴를 닫으면) —", 18, Ui.DimTextColor);
@@ -640,6 +690,7 @@ namespace CaseFileOmission.Playtest
             string outcome = c.OfficialConclusion.Outcome switch
             {
                 ContractOutcome.Resolved => "정상 해결 — 공식 결론 확정",
+                ContractOutcome.ResolvedAsSuicide => "정상 해결 — 공식 결론 '자살'",
                 ContractOutcome.Unsolved => "미제 (실패가 아님)",
                 ContractOutcome.HandlerPoliceDeceased => "담당 경찰 사망으로 종료(미제 처리)",
                 _ => c.OfficialConclusion.Outcome.ToString()
@@ -701,6 +752,14 @@ namespace CaseFileOmission.Playtest
                     pages.Add(("", "(플레이어의 사무실로 돌아온다.)"));
                     return pages;
                 }
+                case GameEndingType.Immigration:
+                    // 10: 준비 없이 해외로 도주 → 조직에 추적당해 살해. 장면·대사 원문이 없어 괄호 연출 문장만(TEST_TEMP).
+                    return new List<(string, string)>
+                    {
+                        ("", "(아무것도 챙기지 못한 채 국경을 넘는다.)"),
+                        ("", "(낯선 도시의 싸구려 방. 문밖에서 발소리가 멈춘다.)"),
+                        ("", "(조직은 끝내 플레이어를 찾아냈다. 암전.)")
+                    };
                 case GameEndingType.PhoneCallRejected:
                     return new List<(string, string)>
                     {
@@ -742,13 +801,21 @@ namespace CaseFileOmission.Playtest
 
         // ───────────────────────── 저장 ─────────────────────────
 
-        private void SaveGame()
+        // 06 2026-11-13: 수동 3슬롯 + 자동 1슬롯. F5 = 수동 1번, F9 = 가장 최근 슬롯 불러오기. 슬롯 고르기는 책상·타이틀의 저장/불러오기 버튼.
+        // persistentDataPath는 MonoBehaviour 생성 중에 부를 수 없어 처음 쓸 때 만든다.
+        private static SaveSlotStore _slots;
+        public static SaveSlotStore Slots => _slots ??= new SaveSlotStore(System.IO.Path.Combine(Application.persistentDataPath, "saves"));
+        private int _manualSlot = 1;
+
+        private void SaveGame() => SaveGame(_manualSlot);
+
+        private void SaveGame(int slot)
         {
             if (Session == null || !Session.CanSave) { Toast("지금은 저장할 수 없습니다(회의 중)."); return; }
             try
             {
-                System.IO.File.WriteAllText(SavePath, SaveGameService.ToJson(Session.CaptureSave()));
-                Toast("저장했습니다.");
+                Session.SaveToSlot(Slots, slot);
+                Toast($"슬롯 {slot}에 저장했습니다.");
             }
             catch (Exception e)
             {
@@ -757,11 +824,56 @@ namespace CaseFileOmission.Playtest
             RefreshHud();
         }
 
-        private void LoadGame()
+        /// <summary>
+        /// 자동 저장(06 자동 저장 시점: 새 게임 / 행동과 시간·NPC 갱신 확정 직후 / 의뢰 결과 직후 / 메인 서사 선택·엔딩 직후).
+        /// 회의 중(반응·의문 처리 직후)은 회의 진행 상태 전체를 아직 저장하지 않아 회의가 끝난 직후에 저장한다.
+        /// </summary>
+        private void AutoSave()
+        {
+            if (Session == null || !Session.CanSave) return;
+            try { Session.SaveToSlot(Slots, SaveSlotStore.AutoSlot); }
+            catch (Exception e) { Log("자동 저장 실패: " + e.Message); }
+        }
+
+        private static string SlotLabel(int slot)
+        {
+            var d = Slots.Peek(slot);
+            string name = slot == SaveSlotStore.AutoSlot ? "자동" : $"슬롯 {slot}";
+            return d == null ? $"{name} (비어 있음)"
+                : $"{name} — {(DateTime.TryParse(d.SavedAtUtc, out var t) ? t.ToLocalTime().ToString("MM-dd HH:mm") : "?")} · {d.CurrentDay}일차";
+        }
+
+        /// <summary>저장·불러오기 슬롯 고르기(임시 창).</summary>
+        private void OpenSlots(bool saving)
+        {
+            var body = Ui.Window(_modalLayer, saving ? "저장할 슬롯" : "불러올 슬롯", () => Ui.Clear(_modalLayer), out _, 0.35f, 0.3f, 0.65f, 0.7f);
+            Ui.Vertical(body, 8, 12);
+            if (!saving) Ui.Button(body, SlotLabel(SaveSlotStore.AutoSlot), () => { Ui.Clear(_modalLayer); LoadGame(SaveSlotStore.AutoSlot); }, Slots.Exists(SaveSlotStore.AutoSlot));
+            for (int i = 1; i <= SaveSlotStore.ManualSlotCount; i++)
+            {
+                int slot = i;
+                Ui.Button(body, SlotLabel(slot), () =>
+                {
+                    Ui.Clear(_modalLayer);
+                    if (saving) { _manualSlot = slot; SaveGame(slot); } else LoadGame(slot);
+                }, saving || Slots.Exists(slot));
+            }
+        }
+
+        private static bool AnySave => Enumerable.Range(0, SaveSlotStore.ManualSlotCount + 1).Any(Slots.Exists);
+
+        /// <summary>가장 최근에 저장된 슬롯(같은 플레이면 저장 순번, 아니면 저장 시각).</summary>
+        private static int LatestSlot() =>
+            Enumerable.Range(0, SaveSlotStore.ManualSlotCount + 1).Select(i => (i, d: Slots.Peek(i))).Where(x => x.d != null)
+                .OrderByDescending(x => x.d.SavedAtUtc).ThenByDescending(x => x.d.SaveSequence).Select(x => x.i).DefaultIfEmpty(-1).First();
+
+        private void LoadGame() { int slot = LatestSlot(); if (slot >= 0) LoadGame(slot); }
+
+        private void LoadGame(int slot)
         {
             try
             {
-                var data = SaveGameService.FromJson(System.IO.File.ReadAllText(SavePath));
+                if (!Slots.TryRead(slot, out var data)) { Toast("불러오기 실패: 저장 파일이 없거나 손상되었습니다(백업도 실패)."); return; }
                 Session = GameSession.Load(data, new GameSessionConfig { Random = new System.Random(_seed + Environment.TickCount) });
                 _resultShownFor = Session.LastContract?.ContractId;
                 _endingShown = Session.Endings.ExecutedEnding;
@@ -813,6 +925,11 @@ namespace CaseFileOmission.Playtest
                 s.CheckEndings();
                 AfterStateChange();
             });
+            Ui.Button(content, "플레이어가 가해자로 지목된 상태 기록 → 이민 경로", () =>
+            {
+                Toast(s.RecordPlayerAccused("TEST_TEMP:debug") ? (s.CanEmigrate ? "지목 상태 기록 — 조사 메뉴에서 이민을 고를 수 있다." : "지목 상태 기록(이민 조건 불충족: 실제 살인 사건·추적 전·체포 조건 없음)") : "기록할 수 없다(의뢰 없음 또는 이미 기록).");
+                AfterStateChange();
+            });
             Ui.Button(content, "메인 사건 단서 전부 지급 → 최종 보고서(UI-404) 진입", () =>
             {
                 foreach (var f in typeof(MainCaseClueNames).GetFields().Where(f => f.IsLiteral && f.FieldType == typeof(string)))
@@ -835,7 +952,7 @@ namespace CaseFileOmission.Playtest
             {
                 if (kb.f1Key.wasPressedThisFrame) { _debugVisible = !_debugVisible; RefreshHud(); }
                 if (kb.f5Key.wasPressedThisFrame) SaveGame();
-                if (kb.f9Key.wasPressedThisFrame && System.IO.File.Exists(SavePath)) LoadGame();
+                if (kb.f9Key.wasPressedThisFrame && AnySave) LoadGame();
             }
 
             Desk.SetRinging(Current == View.Desk && !_phone.InCall && (Session.State.CurrentPhase == GamePhase.Idle && !Session.IsGameOver
@@ -854,10 +971,10 @@ namespace CaseFileOmission.Playtest
                 // 대화창이 덮는 화면 아래쪽 HUD(기록·조사 메뉴 버튼)는 대화 중에 숨긴다.
                 foreach (var go in _hiddenDuringDialogue) if (go != null) go.SetActive(!_field.DialogueOpen);
                 if (!_phone.InCall) UpdateBoardCamera(mouseLook);
-                // 대화창의 대사는 클릭뿐 아니라 E로도 넘긴다(사용자 지정). 대화를 연 E와 같은 프레임에는 넘기지 않는다.
-                if (_field.DialogueOpen && kb != null && kb.eKey.wasPressedThisFrame && Time.frameCount != _dialogueOpenedFrame)
-                    _field.TryAdvance();
             }
+            // 대화창의 대사는 클릭뿐 아니라 E로도 넘긴다(사용자 지정, 현장·회의 공통). 대화를 연 E와 같은 프레임에는 넘기지 않는다.
+            if (_field.DialogueOpen && kb != null && kb.eKey.wasPressedThisFrame && Time.frameCount != _dialogueOpenedFrame)
+                _field.TryAdvance();
             if (blocked) return;
 
             if (Current == View.Board)
@@ -865,6 +982,8 @@ namespace CaseFileOmission.Playtest
                 if (kb != null && kb.tabKey.wasPressedThisFrame) { _menuOpen = !_menuOpen; RefreshHud(); }
                 UpdatePlayerMovement(kb);
                 if (kb != null && kb.eKey.wasPressedThisFrame) InteractNearest();
+                if (kb != null && kb.fKey.wasPressedThisFrame) ConfirmShot();
+                if (kb != null && kb.rKey.wasPressedThisFrame) Act(Session.Reload(), "재장전했다.");
                 return;
             }
 
@@ -898,6 +1017,7 @@ namespace CaseFileOmission.Playtest
             if (kb == null || s.State.CurrentPhase != GamePhase.Investigation || s.State.IsTimeBlockEnded) return;
             var input = new Vector2((kb.dKey.isPressed ? 1 : 0) - (kb.aKey.isPressed ? 1 : 0), (kb.wKey.isPressed ? 1 : 0) - (kb.sKey.isPressed ? 1 : 0));
             if (input == Vector2.zero) return;
+            _lastMoveTime = Time.time;
             var me = Board.PlayerPiece(s);
             if (me == null) return;
             me.GetComponent<PieceView>()?.Stop();
@@ -991,7 +1111,7 @@ namespace CaseFileOmission.Playtest
         // ───────────────────────── 접근 안내·상호작용 ─────────────────────────
 
         private readonly List<FieldHud.WorldMark> _nameMarks = new List<FieldHud.WorldMark>();
-        private readonly List<Vector3> _talkIcons = new List<Vector3>();
+        private readonly List<(Vector3, Texture2D)> _statusIcons = new List<(Vector3, Texture2D)>();
 
         /// <summary>
         /// 09 §2·§4: 가까이 간 NPC·경찰·조사 대상의 이름 띠, 지금 E로 할 수 있는 행동 안내, 다른 NPC와 대화 중인 NPC 머리 위 대화 아이콘.
@@ -1001,7 +1121,7 @@ namespace CaseFileOmission.Playtest
         {
             var s = Session;
             _nameMarks.Clear();
-            _talkIcons.Clear();
+            _statusIcons.Clear();
             if (blocked || s.State.CurrentPhase != GamePhase.Investigation)
             {
                 _field.HideWorldUi();
@@ -1037,14 +1157,18 @@ namespace CaseFileOmission.Playtest
             }
 
             var mePos = Board.PiecePosition(s.PlayerId);
-            foreach (var id in Board.TalkingIds)
+            void AddIcon(string id, Texture2D tex)
             {
                 var p = Board.PiecePosition(id);
-                if (p.HasValue && mePos.HasValue && Vector3.Distance(p.Value, mePos.Value) <= FieldHud.StatusIconRange)
-                    _talkIcons.Add(p.Value);
+                if (p.HasValue && mePos.HasValue && Board.IsPieceVisible(id) && Vector3.Distance(p.Value, mePos.Value) <= FieldHud.StatusIconRange)
+                    _statusIcons.Add((p.Value, tex));
             }
+            foreach (var id in Board.TalkingIds) AddIcon(id, Art.StatusTalk);
+            // NPC·경찰 행동 아이콘(07 "NPC의 대부분 행동은 아이콘으로 표시"): 지난 15분 턴에 조사 대상을 살펴본 인물 위에 눈.
+            foreach (var r in s.RecentInvestigations.Where(r => r.Minute > s.WorldMinute - GameStateController.SlotMinutes))
+                if (!Board.TalkingIds.Contains(r.ActorId)) AddIcon(r.ActorId, Art.StatusEye);
 
-            _field.UpdateWorldUi(MainCamera, _nameMarks, prompt, talk, caption, _talkIcons);
+            _field.UpdateWorldUi(MainCamera, _nameMarks, prompt, talk, caption, _statusIcons);
         }
 
         private string MarkName(BoardView.Nearby n) => n.Kind switch
@@ -1057,6 +1181,55 @@ namespace CaseFileOmission.Playtest
         };
 
         /// <summary>가까이 있는 대상과 상호작용(E): 조사 오브젝트는 조사(1시간), NPC는 대화(30분), 담당 경찰은 대화.</summary>
+        // ───────────────────────── 사격(06 2026-11-09 총기) ─────────────────────────
+
+        private float _lastMoveTime = -10f;
+
+        /// <summary>TEST_TEMP 판정 기준(노션에 없음): 근거리 3 m 이내, 0.4초 안에 걸었으면 조준 불안정, 표적이 걷는 중이면 빠른 표적, 사이에 다른 인물이 있으면 부분 가림.</summary>
+        public const float CloseRangeMeters = 3f;
+        private const float UnstableAimSeconds = 0.4f;
+
+        /// <summary>
+        /// F: 같은 방에서 보이는 가장 가까운 살아 있는 인물(NPC·경찰)을 겨눈다. 쏘기 전에 확인한다(1시간, 남은 탄 표시).
+        /// 판정·목격·사망·추적 발동은 GameSession.FireAt이 한다.
+        /// </summary>
+        private void ConfirmShot()
+        {
+            var s = Session;
+            if (s.State.CurrentPhase != GamePhase.Investigation || s.State.IsTimeBlockEnded) return;
+            var target = Board.NearbyTargets(s, 30f)
+                .Where(n => n.Kind == BoardView.InteractableKind.Npc || n.Kind == BoardView.InteractableKind.Police)
+                .OrderBy(n => n.Distance).FirstOrDefault();
+            if (target.Kind == BoardView.InteractableKind.None) { Toast("이 방에 겨눌 사람이 없다."); return; }
+
+            string name = target.Kind == BoardView.InteractableKind.Police ? PlaytestTexts.PoliceName(target.Id) : PlaytestTexts.TempName(s, target.Id);
+            bool close = target.Distance <= CloseRangeMeters;
+            bool unstable = Time.time - _lastMoveTime < UnstableAimSeconds;
+            bool moving = Board.IsPieceMoving(target.Id);
+            bool blocked = Board.IsLineBlocked(s.PlayerId, target.Id);
+            string id = target.Id;
+            _dialogueOpenedFrame = Time.frameCount;
+            _field.ShowDialogue("권총", new[]
+            {
+                $"{name}을(를) 겨눈다. (장전 {s.Firearm.CurrentAmmo}발 · 남은 탄 {s.Firearm.ReserveAmmo}발 · 1시간)\n" +
+                $"{(close ? "근거리 " : "")}{(unstable ? "조준 불안정 " : "")}{(moving ? "움직이는 표적 " : "")}{(blocked ? "사이에 가림 " : "")}"
+            }, new List<(string, Action)>
+            {
+                ("쏜다", () => Fire(id, close, unstable, moving, blocked)),
+                ("그만둔다", null)
+            });
+        }
+
+        private void Fire(string targetId, bool close, bool unstable, bool moving, bool blocked)
+        {
+            var s = Session;
+            var result = s.FireAt(targetId, close, unstable, moving, blocked);
+            if (!result.Success) { Act(result); return; }
+            var shot = s.LastShot;
+            Act(result, shot == null ? null
+                : $"탕! {(shot.Hit ? "명중 — 쓰러졌다." : "빗나갔다.")}{(shot.WitnessNpcIds.Count > 0 ? $" (목격 {shot.WitnessNpcIds.Count}명)" : "")}");
+        }
+
         private int _dialogueOpenedFrame = -1;
 
         private void InteractNearest()
@@ -1081,18 +1254,53 @@ namespace CaseFileOmission.Playtest
             var result = s.TalkTo(npcId);
             if (!result.Success) { Act(result); return; }
             string name = PlaytestTexts.TempName(s, npcId);
-            var lines = result.NewClueIds.Select(id => PlaytestTexts.MaterialBody(s, id)).Where(t => !string.IsNullOrWhiteSpace(t)).ToList();
-            if (lines.Count == 0) lines.Add("\"더 할 말은 없어요.\"");
+            var heard = HeardTestimonies(npcId);
+            var lines = new List<string> { OpeningLine(npcId) };
+            lines.AddRange(result.NewClueIds.Select(id => PlaytestTexts.MaterialBody(s, id)).Where(t => !string.IsNullOrWhiteSpace(t)));
+            if (result.NewClueIds.Count == 0)
+                lines.Add(heard.Count > 0 ? "\"아까 말씀드린 게 제가 아는 전부예요.\"" : "\"그 시간엔… 딱히 본 게 없어요.\"");
             ReportResult(result, null);
             AfterStateChange();
             if (Session.State.CurrentPhase != GamePhase.Investigation || Current != View.Board) return;
+            _field.ShowDialogue(name, lines, TalkChoices(npcId));
+        }
 
+        /// <summary>대화가 끝난 뒤 선택지: 들은 증언 다시 듣기(시간 없음)·관찰·회유·대화 종료.</summary>
+        private List<(string, Action)> TalkChoices(string npcId)
+        {
+            var s = Session;
             var choices = new List<(string, Action)>();
+            var heard = HeardTestimonies(npcId);
+            if (heard.Count > 0)
+                choices.Add(("방금 한 이야기를 다시 듣는다", () => _field.ShowDialogue(PlaytestTexts.TempName(s, npcId),
+                    heard.Select(id => PlaytestTexts.MaterialBody(s, id)).ToList(), TalkChoices(npcId))));
             bool canAct = !s.State.IsTimeBlockEnded;
             if (canAct && s.State.RemainingTimeSlots >= GameSession.TalkCost) choices.Add(("지켜본다 (관찰 30분)", () => ObserveNpc(npcId)));
             if (canAct && !s.Campaign.PersuasionAttempted) choices.Add(("회유한다 (1시간)", () => Persuade(npcId)));
             choices.Add(("대화를 마친다", null));
-            _field.ShowDialogue(name, lines, choices);
+            return choices;
+        }
+
+        /// <summary>이 인물에게서 대화로 이미 얻은 증언 자료.</summary>
+        private List<string> HeardTestimonies(string npcId) =>
+            Session.Materials.Where(m => m.Acquisition == ContractContent.MaterialAcquisition.TalkToNpc && m.SourceNpcId == npcId && Session.Clues.Exists(m.MaterialId))
+                .Select(m => m.MaterialId).ToList();
+
+        /// <summary>
+        /// 대화 첫마디. 그 인물이 플레이어에게 갖는 관계 의심도(07)를 「개인 의견 점수 구간별 행동·대사 표현(1-1)」의 다섯 구간 표현 강도에 맞춘다.
+        /// 문장은 원문이 없어 TEST_TEMP다(정식은 AI 대사 생성). 상태는 바꾸지 않는다.
+        /// </summary>
+        private string OpeningLine(string npcId)
+        {
+            float suspicion = Session.Relationships.GetSuspicion(npcId, Session.PlayerId);
+            return suspicion switch
+            {
+                < 20 => "\"무슨 일이시죠? 제가 아는 거라면 말씀드릴게요.\"",
+                < 40 => "\"…또 물어보실 게 있나요?\"",
+                < 60 => "\"용건만 짧게 말씀해 주세요.\"",
+                < 80 => "\"왜 자꾸 저한테만 캐묻는 거죠?\"",
+                _ => "\"당신하고는 더 할 얘기 없어요.\""
+            };
         }
 
         /// <summary>

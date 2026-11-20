@@ -182,6 +182,15 @@ namespace CaseFileOmission.Meeting
             return new SuspicionDeltaOutcome { ObserverId = observerId, SuspectId = suspectId, Delta = delta, ConsecutiveCountUsed = count };
         }
 
+        /// <summary>이전 회의에서 보류된 의문을 이번 회의에서도 처리하지 않고 넘겼을 때 호출한다(+10, 연속 횟수 없음).</summary>
+        public SuspicionDeltaOutcome RecordCarriedOverDeferred(string actionEventId, string observerId, string suspectId)
+        {
+            EnsureActive();
+            if (!ActionGuards.TryBeginOnce(_eventLog, actionEventId, GameEventType.SuspicionChanged, ContractId))
+                return Duplicate(observerId, suspectId);
+            return new SuspicionDeltaOutcome { ObserverId = observerId, SuspectId = suspectId, Delta = MeetingSuspicionTable.CarriedOverDeferIncrease };
+        }
+
         /// <summary>대응을 포기했을 때 호출한다.</summary>
         public SuspicionDeltaOutcome RecordGiveUp(string actionEventId, string observerId, string suspectId)
         {

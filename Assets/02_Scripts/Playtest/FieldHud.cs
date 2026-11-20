@@ -23,6 +23,30 @@ namespace CaseFileOmission.Playtest
         public Texture2D PersonNamePlate, ItemNamePlate;
         [Tooltip("의심도 목록 초상(TEST_TEMP: 인물 코드 해시로 고른다)")]
         public Texture2D[] Portraits = Array.Empty<Texture2D>();
+
+        [Header("의뢰 보고서(임시 시안)")]
+        public Texture2D ReportCover, ReportListPaper, ReportItem, ReportItemSelected, ReportDetail, ReportPhoto, ReportWriting;
+        [Tooltip("단서 이미지(02_Textures/Clue). 자료 이름에 이미지 이름이 들어 있으면 그 이미지, 없으면 자료 종류별 대표 이미지(TEST_TEMP)")]
+        public Texture2D[] ClueImages = Array.Empty<Texture2D>();
+
+        /// <summary>자료에 붙일 단서 이미지. 이름이 겹치는 이미지 → 종류별 대표 이미지 순으로 고른다(TEST_TEMP).</summary>
+        public Texture2D ClueImageFor(string title, Evidence.ClueFormat format)
+        {
+            if (ClueImages == null || ClueImages.Length == 0) return null;
+            if (!string.IsNullOrEmpty(title))
+            {
+                var hit = ClueImages.Where(t => t != null && title.Contains(t.name.Replace('_', ' ')))
+                    .OrderByDescending(t => t.name.Length).FirstOrDefault();
+                if (hit != null) return hit;
+            }
+            string fallback = format switch
+            {
+                Evidence.ClueFormat.PhysicalObject => "내용물이 든 증거 봉투",
+                Evidence.ClueFormat.Document => "서류철",
+                _ => "휴대용 녹음기"
+            };
+            return ClueImages.FirstOrDefault(t => t != null && t.name == fallback);
+        }
     }
 
     /// <summary>
@@ -249,7 +273,7 @@ namespace CaseFileOmission.Playtest
         /// prompt가 null이면 상호작용 안내를 숨긴다. 세 표시는 서로 다른 조건으로 켜고 끈다.
         /// </summary>
         public void UpdateWorldUi(Camera cam, IReadOnlyList<WorldMark> names, WorldMark? prompt, bool promptIsTalk, string promptCaption,
-            IReadOnlyList<Vector3> talkIcons)
+            IReadOnlyList<(Vector3 pos, Texture2D tex)> statusIcons)
         {
             for (int i = 0; i < names.Count; i++)
             {
@@ -272,14 +296,14 @@ namespace CaseFileOmission.Playtest
                 _promptCaption.text = promptCaption;
             }
 
-            for (int i = 0; i < talkIcons.Count; i++)
+            for (int i = 0; i < statusIcons.Count; i++)
             {
                 var icon = Icon(i);
-                bool shown = Place(cam, (RectTransform)icon.transform, talkIcons[i] + Vector3.up * 1.6f);
+                bool shown = statusIcons[i].tex != null && Place(cam, (RectTransform)icon.transform, statusIcons[i].pos + Vector3.up * 1.6f);
                 icon.gameObject.SetActive(shown);
-                icon.texture = _art.StatusTalk;
+                icon.texture = statusIcons[i].tex;
             }
-            for (int i = talkIcons.Count; i < _icons.Count; i++) _icons[i].gameObject.SetActive(false);
+            for (int i = statusIcons.Count; i < _icons.Count; i++) _icons[i].gameObject.SetActive(false);
         }
 
         public void HideWorldUi()
@@ -353,7 +377,14 @@ namespace CaseFileOmission.Playtest
         /// 09 §3 NPC 대화창: 화면 아래 어두운 그라데이션에 NPC 이름과 현재 대화 내용을 보이고, 클릭으로 넘긴다.
         /// 대화 내용이 끝나면 문구를 지우고 선택지를 보인다. 선택지를 고르면 창을 닫고 그 동작을 실행한다.
         /// </summary>
-        public void ShowDialogue(string speaker, IList<string> lines, IList<(string label, Action act)> choices, int index = 0)
+        public void ShowDialogue(string speaker, IList<string> lines, IList<(string label, Action act)> choices) =>
+            ShowPages(lines.Select(l => (speaker, l)).ToList(), choices, speaker);
+
+        /// <summary>
+        /// 여러 화자의 대사를 한 장씩 보인다(회의 반응 등). 말하는 사람 이름 옆에 상태 표시(!·?)를 붙일 수 있다.
+        /// 마지막 장 뒤에 선택지가 있으면 선택지를, 없으면 창을 닫는다.
+        /// </summary>
+        public void ShowPages(IList<(string speaker, string line)> pages, IList<(string label, Action act)> choices, string choiceSpeaker = "", int index = 0)
         {
             Ui.Clear(_dialogueLayer);
             _advance = null;
@@ -362,17 +393,18 @@ namespace CaseFileOmission.Playtest
             bg.texture = Gradient;
             bg.color = Color.white;
 
+            string speaker = index < pages.Count ? pages[index].speaker : choiceSpeaker;
             var name = Ui.Label(box, speaker, 30, new Color(0.95f, 0.78f, 0.45f), TextAnchor.LowerLeft);
             Ui.Anchor(name.rectTransform, 0.16f, 0.66f, 0.84f, 0.86f);
 
-            if (index < lines.Count)
+            if (index < pages.Count)
             {
-                var text = Ui.Label(box, lines[index], 26, Ui.TextColor, TextAnchor.UpperLeft);
+                var text = Ui.Label(box, pages[index].line, 26, Ui.TextColor, TextAnchor.UpperLeft);
                 Ui.Anchor(text.rectTransform, 0.16f, 0.08f, 0.84f, 0.62f);
                 var hint = Ui.Label(box, "클릭 또는 E로 계속 ▼", 18, Ui.DimTextColor, TextAnchor.LowerRight);
                 Ui.Anchor(hint.rectTransform, 0.6f, 0.03f, 0.84f, 0.12f);
                 // 대사는 자동으로 넘기지 않는다 — 클릭이나 E로만 진행한다.
-                _advance = () => ShowDialogue(speaker, lines, choices, index + 1);
+                _advance = () => ShowPages(pages, choices, choiceSpeaker, index + 1);
                 var click = box.gameObject.AddComponent<Button>();
                 click.transition = Selectable.Transition.None;
                 click.onClick.AddListener(() => _advance?.Invoke());

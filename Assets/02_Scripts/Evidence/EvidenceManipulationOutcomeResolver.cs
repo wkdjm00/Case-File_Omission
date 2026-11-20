@@ -10,7 +10,10 @@ namespace CaseFileOmission.Evidence
         Failed,
 
         /// <summary>조작 가능 시점 전이라 판정하지 않았다(시도 기록도 남기지 않음).</summary>
-        Locked
+        Locked,
+
+        /// <summary>남은 조사 예산이 1시간보다 적어 시도하지 않았다(시간도 진행하지 않음).</summary>
+        NotEnoughTime
     }
 
     public sealed class ManipulationAttemptRecord

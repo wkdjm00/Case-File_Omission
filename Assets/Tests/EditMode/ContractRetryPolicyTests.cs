@@ -114,10 +114,10 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
-        public void DefaultConfig_UsesTenCandidatesAndThreeAttempts()
+        public void DefaultConfig_UsesThreeCandidatesAndThreeAttempts()
         {
             var config = ContractGenerationConfig.CreateDefault();
-            Assert.AreEqual(10, config.MaxCandidates);
+            Assert.AreEqual(3, config.MaxCandidates, "04 2026-11-12: 후보 최대 3개");
             Assert.AreEqual(3, config.MaxAttemptsPerCandidate);
             Assert.AreEqual(5, config.MaxRetriesPerElement);
         }

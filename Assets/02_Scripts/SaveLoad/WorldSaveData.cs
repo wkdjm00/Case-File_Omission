@@ -349,6 +349,7 @@ namespace CaseFileOmission.SaveLoad
 
         public OrganizationConditionType ConditionType;
         public string ConditionTargetId;
+        public string[] ConditionTargetIds;
         public bool ConditionRequiresDelivery;
         public bool ConditionJudged;
         public bool ConditionAchieved;
@@ -381,6 +382,13 @@ namespace CaseFileOmission.SaveLoad
         public string[] HandlerQueue;
         public string LastHandlerPoliceId;
         public bool PersuasionAttempted;
+        public string[] PoliceInspectedObjectIds;
+        public string[] PhysicallyDistortedClueIds;
+        public string PlayerAccusedCaseId;
+        public string[] StolenMaterialIds;
+        public TheftIncident[] TheftIncidents;
+        public string RunId;
+        public int SaveSequence;
         public bool CulpritIdentified;
         public OpinionDto[] Opinions;
         public PublicRoleDto[] PublicRoles;
@@ -420,6 +428,37 @@ namespace CaseFileOmission.SaveLoad
     /// 버전 2부터 진행 중인 의뢰(진실·조직 조건 등)와 의뢰 간 진행 상태(추적·탄약·지원 단서)를 함께 담는다.
     /// 각 구역은 대상 객체가 없을 때 비워 두며, 불러올 때도 빈 구역은 건너뛴다.
     /// </summary>
+    /// <summary>
+    /// 06 「단서·절도 행동 규칙 대조」 부수사건: 직접 목격하거나 관련 NPC가 부재를 발견한 시점에 생긴다. 같은 행위·같은 물건이면 하나만 만들고,
+    /// 이후 목격·발견은 NPC별 인지로 덧붙인다(자동 전파 없음). 부재 발견은 '없어졌다'만 알 뿐 범인을 확정하지 않는다.
+    /// </summary>
+    [Serializable]
+    public sealed class TheftIncident
+    {
+        public string IncidentId;
+        public string MaterialId;
+        public string RoomId;
+        public int Minute;
+        public bool IsBody;
+        /// <summary>훔치는 장면을 직접 본 인물(NPC·경찰). 범인이 플레이어임을 안다.</summary>
+        public System.Collections.Generic.List<string> WitnessIds = new System.Collections.Generic.List<string>();
+        /// <summary>나중에 물건이 없어진 것을 발견한 NPC(범인은 모른다).</summary>
+        public System.Collections.Generic.List<string> AbsenceNoticedIds = new System.Collections.Generic.List<string>();
+    }
+
+    [Serializable]
+    public sealed class CardQuestionDto
+    {
+        public string QuestionId;
+        public string JudgeId;
+        public string PresenterId;
+        public string ClueId;
+        public bool PresenterIsLying;
+        public CardQuestionState State;
+        public int AdditionalVerificationsUsed;
+        public int DeferCount;
+    }
+
     [Serializable]
     public sealed class WorldSaveData
     {
@@ -433,6 +472,9 @@ namespace CaseFileOmission.SaveLoad
 
         /// <summary>버전 2에 추가된 선택 구역. 없던 예전 저장 파일은 빈 보드로 시작한다.</summary>
         public CaseBoardSaveData[] CaseBoards;
+
+        /// <summary>다음 회의로 넘긴 의문(선택 구역 — 없던 예전 파일은 빈 목록).</summary>
+        public CardQuestionDto[] CarriedOverQuestions;
         public MainCaseExtendedSaveData MainCase;
         public OccupantPositionDto[] Positions;
         public GameEventDto[] GlobalEvents;

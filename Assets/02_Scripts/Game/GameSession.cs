@@ -84,6 +84,9 @@ namespace CaseFileOmission.Game
         private int _actionCounter;
         private List<CardQuestion> _carriedOverQuestions = new List<CardQuestion>();
 
+        /// <summary>결론 없이 마친 회의에서 다음 회의로 넘긴 의문(다음 회의에서 가장 먼저 처리). 저장한다.</summary>
+        public IReadOnlyList<CardQuestion> CarriedOverQuestions => _carriedOverQuestions;
+
         public string PlayerId { get; }
 
         // ── 의뢰를 넘나드는 상태 ──
@@ -200,6 +203,8 @@ namespace CaseFileOmission.Game
         /// <summary>새 게임. 03 확정: 조카의 일기는 게임 시작부터 보유한다.</summary>
         public void StartNewGame()
         {
+            Campaign.RunId = Guid.NewGuid().ToString("N");
+            Campaign.SaveSequence = 0;
             GrantMainCaseDocument("maincase:NieceDiary", MainCaseClueNames.NieceDiary);
         }
 
@@ -350,6 +355,12 @@ namespace CaseFileOmission.Game
             Campaign.PublicRoles.Clear();
             InvestigatedObjectIds.Clear();
             RecentExchanges = new List<OverheardExchange>();
+            RecentInvestigations = new List<SceneInvestigationRecord>();
+            Campaign.PoliceInspectedObjectIds.Clear();
+            Campaign.PhysicallyDistortedClueIds.Clear();
+            Campaign.PlayerAccusedCaseId = null; // 이전 의뢰의 지목 상태를 다음 의뢰에 재사용하지 않는다.
+            Campaign.StolenMaterialIds.Clear();
+            Campaign.TheftIncidents.Clear();
             if (Campaign.PendingHandlerDeathBonus)
             {
                 // 이전 담당 경찰 사망의 추가 +10(기본 +5와 합쳐 +15)은 새로 배정된 담당 경찰에게 한 번만 적용한다.
@@ -470,6 +481,101 @@ namespace CaseFileOmission.Game
 
             RollClueConfirmations(result);
             return AfterAction(result);
+        }
+
+        // ───────────────────────── 절도·시신 탈취(06) ─────────────────────────
+
+        /// <summary>시신 탈취 15분(06 「시신 탈취 — 실행 및 목격 조건」, 실패해도 소모).</summary>
+        public const int BodyRemovalCost = 1;
+
+        /// <summary>
+        /// '금전적으로 도움이 될 것 같은' 물건이 놓이는 조사 대상(TEST_TEMP — 노션에 목록 없음. 사용자 지시 2026-11-20:
+        /// 조직이 훔쳐 오라는 특정 물건 또는 금전적으로 도움이 될 것 같은 단서만 절도 대상).
+        /// </summary>
+        public static readonly HashSet<string> ValuableObjectNames = new HashSet<string> { "보석함", "장부", "계약서" };
+
+        /// <summary>
+        /// 훔칠 수 있는 자료인지: 지금 방 현장에 실제로 있고(조사로 얻는 자료·아직 훔치지 않음), NPC가 보관한 단서가 아니며,
+        /// 조직 조건이 지정한 물건이거나 귀중품 대상의 물리 증거이거나 시신이어야 한다.
+        /// </summary>
+        public bool IsStealable(EvidenceMaterial m)
+        {
+            if (CurrentContract == null || m == null || m.ContractId != CurrentContract.ContractId) return false;
+            if (m.Acquisition != MaterialAcquisition.InvestigateRoom || m.RoomId != PlayerRoom) return false;
+            if (Campaign.StolenMaterialIds.Contains(m.MaterialId)) return false;
+            if (Clues.Exists(m.MaterialId) && Clues.GetRecord(m.MaterialId).WorldState == ClueWorldState.HeldByNpc) return false;
+            return IsBodyMaterial(m.MaterialId)
+                   || m.MaterialId == CurrentContract.OrgCondition.TargetId
+                   || (m.Format == ClueFormat.PhysicalObject && m.ObjectId != null && ValuableObjectNames.Contains(CaseCatalog.ObjectName(m.ObjectId)));
+        }
+
+        public bool IsBodyMaterial(string materialId) =>
+            CurrentContract != null && materialId == ContractPipeline.BodyMaterialId(CurrentContract.ContractId);
+
+        public IReadOnlyList<EvidenceMaterial> StealableMaterialsHere() => Materials.Where(IsStealable).ToList();
+
+        /// <summary>
+        /// 물건 절도(1시간, 항상 성공) / 시신 탈취(15분). 가져간 것은 플레이어 자료가 되고(인벤토리 없음) 현장에서 사라진다.
+        /// 같은 방의 살아 있는 인물(NPC·경찰)은 즉시 목격한다(TEST_TEMP — 시야 기준이 노션에 없음). 목격이 있으면 부수사건을 하나 만든다.
+        /// 목격이 없으면 나중에 그 물건을 아는 NPC가 그 방을 다시 확인할 때 부재를 발견한다(<see cref="CheckTheftAbsence"/>).
+        /// 실제 진실·기존 기억·기록은 바꾸지 않는다. 경찰 의심도 변화는 노션에 수치가 없어 적용하지 않는다.
+        /// </summary>
+        public GameActionResult Steal(string materialId)
+        {
+            var m = Materials.FirstOrDefault(x => x.MaterialId == materialId);
+            if (m == null) return GameActionResult.Fail(GameActionFailure.UnknownTarget);
+            bool body = IsBodyMaterial(materialId);
+            var guard = GuardInvestigation(body ? BodyRemovalCost : DefaultActionCost);
+            if (!guard.Success) return guard;
+            if (!IsStealable(m)) return GameActionResult.Fail(GameActionFailure.InvalidInput);
+
+            var result = SpendTime(body ? BodyRemovalCost : DefaultActionCost);
+            DiscoverMaterial(m, result);
+            Campaign.StolenMaterialIds.Add(m.MaterialId);
+            if (body && Npcs.Exists(CurrentContract.Truth.VictimId))
+                Occupancy.Remove(CurrentContract.Truth.VictimId); // 시신을 현장에서 치운다(운반·보관 처리 없음)
+
+            var incident = new TheftIncident { IncidentId = "theft:" + m.MaterialId, MaterialId = m.MaterialId, RoomId = m.RoomId, Minute = Campaign.NpcMinute, IsBody = body };
+            foreach (var npc in Npcs.GetByContract(CurrentContract.ContractId).Where(n => n.IsAlive && Occupancy.HasPosition(n.NpcId) && Occupancy.GetRoom(n.NpcId) == PlayerRoom))
+            {
+                incident.WitnessIds.Add(npc.NpcId);
+                npc.LearnInfo(incident.IncidentId, NpcJudgement.Believe);
+                npc.MarkWitnessed(incident.IncidentId);
+            }
+            foreach (var police in PoliceRoster.AllPoliceIds.Where(p => PoliceLife.IsAlive(p) && Occupancy.HasPosition(p) && Occupancy.GetRoom(p) == PlayerRoom))
+                incident.WitnessIds.Add(police);
+            if (incident.WitnessIds.Count > 0 && Campaign.TheftIncidents.All(i => i.IncidentId != incident.IncidentId))
+                Campaign.TheftIncidents.Add(incident);
+
+            RollClueConfirmations(result);
+            return AfterAction(result);
+        }
+
+        /// <summary>
+        /// 부재 발견(06): 그 물건을 아는(그 자료의 사실을 보유한) 살아 있는 NPC가 그 방에 있으면 물건이 없어진 것을 알게 된다.
+        /// '없어졌다'는 정보만 주고 범인은 확정하지 않는다. 같은 물건의 부수사건은 하나이며 발견자는 NPC별로 덧붙인다. 15분 턴마다 호출.
+        /// </summary>
+        private void CheckTheftAbsence()
+        {
+            if (CurrentContract == null) return;
+            foreach (var id in Campaign.StolenMaterialIds)
+            {
+                var m = Materials.FirstOrDefault(x => x.MaterialId == id);
+                if (m == null) continue;
+                var incident = Campaign.TheftIncidents.FirstOrDefault(i => i.MaterialId == id);
+                foreach (var npc in Npcs.GetByContract(CurrentContract.ContractId).Where(n => n.IsAlive && Occupancy.HasPosition(n.NpcId) && Occupancy.GetRoom(n.NpcId) == m.RoomId))
+                {
+                    if (!m.StatedInfoIds.Any(npc.Knows)) continue;
+                    if (incident != null && (incident.WitnessIds.Contains(npc.NpcId) || incident.AbsenceNoticedIds.Contains(npc.NpcId))) continue;
+                    if (incident == null)
+                    {
+                        incident = new TheftIncident { IncidentId = "theft:" + id, MaterialId = id, RoomId = m.RoomId, Minute = Campaign.NpcMinute, IsBody = IsBodyMaterial(id) };
+                        Campaign.TheftIncidents.Add(incident);
+                    }
+                    incident.AbsenceNoticedIds.Add(npc.NpcId);
+                    npc.LearnInfo("missing:" + id, NpcJudgement.Believe);
+                }
+            }
         }
 
         /// <summary>
@@ -671,8 +777,32 @@ namespace CaseFileOmission.Game
             var dropResult = SpendTime(DropClueCost);
             Clues.Drop(clueId);
             Occupancy.PlaceAt(clueId, PlayerRoom);
+            // 06 §8: 경찰이 보는 앞에서 버리면 발각된다(버린 이유를 의심할 수 있음). 시야 정의·의심도 수치가 노션에 없어
+            // 같은 방의 살아 있는 경찰을 목격자로 기록만 한다(TEST_TEMP). 보고서 기록은 그대로 남는다.
+            foreach (var police in PoliceRoster.AllPoliceIds.Where(p => PoliceLife.IsAlive(p) && Occupancy.HasPosition(p) && Occupancy.GetRoom(p) == PlayerRoom))
+                State.EventLog.TryRecord(new GameEvent($"drop-seen:{clueId}:{police}", GameEventType.Custom, CurrentContract.ContractId, police));
             return AfterAction(dropResult);
         }
+
+        /// <summary>현장에 떨어진 단서(내가 버린 것 등)를 같은 방에서 다시 줍는다(06: 물건 조사와 같은 1시간).</summary>
+        public GameActionResult PickUpClue(string clueId)
+        {
+            var guard = GuardInvestigation(InvestigateCost);
+            if (!guard.Success) return guard;
+            if (!Clues.Exists(clueId) || Clues.GetRecord(clueId).WorldState != ClueWorldState.DroppedInWorld
+                || !Occupancy.HasPosition(clueId) || Occupancy.GetRoom(clueId) != PlayerRoom)
+                return GameActionResult.Fail(GameActionFailure.InvalidInput);
+
+            var result = SpendTime(InvestigateCost);
+            Clues.PickUpByPlayer(clueId);
+            Occupancy.Remove(clueId);
+            return AfterAction(result);
+        }
+
+        /// <summary>지금 방 바닥에 떨어져 있는 단서.</summary>
+        public IReadOnlyList<string> DroppedCluesHere() =>
+            PlayerRoom == null ? new List<string>()
+            : Occupancy.GetOccupants(PlayerRoom).Where(id => Clues.Exists(id) && Clues.GetRecord(id).WorldState == ClueWorldState.DroppedInWorld).ToList();
 
         /// <summary>재장전(06 확정: 1시간 = 4칸).</summary>
         public GameActionResult Reload()
@@ -721,6 +851,9 @@ namespace CaseFileOmission.Game
                 witness.LearnInfo(shot.EventId, NpcJudgement.Believe);
                 witness.MarkWitnessed(shot.EventId);
             }
+            // 같은 방에 있던 살아 있는 경찰도 목격자로 기록한다(06 사격 이벤트 "목격자" 기록). 사격만으로 의심도는 바꾸지 않는다.
+            foreach (var police in PoliceRoster.AllPoliceIds.Where(p => p != targetId && PoliceLife.IsAlive(p) && Occupancy.HasPosition(p) && Occupancy.GetRoom(p) == room))
+                shot.WitnessNpcIds.Add(police);
 
             if (shot.Hit)
             {
@@ -739,7 +872,7 @@ namespace CaseFileOmission.Game
                 }
 
                 if (Pursuit.Stage == PursuitStage.NotActive)
-                    Pursuit.TryTrigger(PlayerId, deathEventId);
+                    Pursuit.TryTrigger(PlayerId, deathEventId, PoliceRoster.AllPoliceIds.Where(PoliceLife.IsAlive));
 
                 if (isPolice && targetId == HandlerPoliceId)
                 {
@@ -769,7 +902,11 @@ namespace CaseFileOmission.Game
         {
             var guard = GuardInvestigation(DefaultActionCost);
             if (!guard.Success)
-                return new ManipulationOutcomeResult { Outcome = ManipulationOutcome.Locked };
+                return new ManipulationOutcomeResult
+                {
+                    // 시간 부족은 잠김과 구분해 알린다(06 시간 부족 행동 처리 — 행동·시간 진행 모두 시작하지 않음).
+                    Outcome = guard.Failure == GameActionFailure.NotEnoughTime ? ManipulationOutcome.NotEnoughTime : ManipulationOutcome.Locked
+                };
             if (!IsPhysicalManipulationUnlocked)
                 return new ManipulationOutcomeResult { Outcome = ManipulationOutcome.Locked };
             if (!Clues.Exists(clueId) || Clues.GetRecord(clueId).WorldState != ClueWorldState.HeldByPlayer)
@@ -786,6 +923,9 @@ namespace CaseFileOmission.Game
             // 2026-11-16 확정 은폐: 지정한 단서 하나의 접근 상태만 바꾼다. 보유 단서 조작은 성공·실패 모두 발각되지 않는다(06).
             if (type == ManipulationType.Conceal && outcome.Outcome != ManipulationOutcome.Locked)
                 Clues.GetRecord(clueId).ApplyConcealment(outcome.Outcome == ManipulationOutcome.Succeeded, detected: false);
+            // 06 2026-11-12: 왜곡에 성공한 보유 단서는 이후 회의에 제시하면 조작된 내용으로 판정·개인 의견에 반영한다.
+            if (type == ManipulationType.Distort && outcome.Outcome == ManipulationOutcome.Succeeded && !Campaign.PhysicallyDistortedClueIds.Contains(clueId))
+                Campaign.PhysicallyDistortedClueIds.Add(clueId);
             AfterAction(result);
             return outcome;
         }
@@ -919,7 +1059,12 @@ namespace CaseFileOmission.Game
 
             State.EnterMeeting();
             _meetingIndex++;
+            // 07 3-3: 추적 중 회의가 플레이어 대응 단계다(기존 카드·진술 시스템). 성공은 의심도로 판정(CheckEndings → Pursuit.Evaluate),
+            // 대응에 실패해도 추적은 계속되고 즉시 게임 오버가 아니다. 의심도 100이면 체포가 우선한다.
+            if (Pursuit.Stage == PursuitStage.GatheringInformation)
+                Pursuit.AdvanceToPlayerResponse();
             Meeting = new MeetingSession(CurrentContract.ContractId, Manipulation);
+            _participantPresented.Clear();
             MeetingResolver = new MeetingCardResolver(Meeting, PlayerId, _carriedOverQuestions);
             _carriedOverQuestions = new List<CardQuestion>();
 
@@ -934,6 +1079,7 @@ namespace CaseFileOmission.Game
             // NPC·경찰이 자기 차례에 어떤 카드를 낼지는 원문에 판단 알고리즘이 없어 그 차례는 넘긴다(의심도 변화 없음) — 플레이어 차례까지 진행.
             AdvanceToPlayerTurn();
             ApplyWitnessOpinions();
+            TryHandlerAccusation();
             return GameActionResult.Ok();
         }
 
@@ -960,13 +1106,72 @@ namespace CaseFileOmission.Game
         /// 제시하거나 넘길 수 있음, 제시 강제 없음) 넘긴다. NPC가 넘기면 06 확정 표대로 그 NPC에 대한 다른 NPC들의 관계 의심도가 오른다
         /// (연속 넘기기 +5/+8/+12/+15). 경찰의 '본인 의심도'를 담는 상태는 없어 경찰의 넘기기는 기록만 한다.
         /// </summary>
+        /// <summary>회의에서 NPC·경찰이 낸 카드(최근 차례 묶음). UI 대사 표시용 — 판정 결과는 개인 의견에 이미 반영됐다.</summary>
+        public sealed class ParticipantCardPlay
+        {
+            public string PresenterId, MaterialId, TargetId;
+            public readonly List<string> AcceptedBy = new List<string>();
+        }
+
+        /// <summary>마지막으로 플레이어 차례까지 진행하는 동안 다른 참가자가 낸 카드·넘김(넘김은 MaterialId null).</summary>
+        public List<ParticipantCardPlay> LastParticipantPlays { get; } = new List<ParticipantCardPlay>();
+
+        private readonly HashSet<(string Presenter, string Material)> _participantPresented = new HashSet<(string, string)>();
+
+        /// <summary>참가자 한 명이 회의에서 낼 수 있는 카드 수(사용자 확정 2026-11-20: 플레이어와 같은 5장).</summary>
+        public const int ParticipantCardLimit = 5;
+        /// <summary>제시 대상이 되는 '가장 의심하는 인물'의 최소 개인 의견(사용자 확정 60).</summary>
+        public const float ParticipantSuspectThreshold = 60f;
+
+        /// <summary>
+        /// 사용자 확정 2026-11-20: NPC·경찰도 플레이어와 같은 규칙으로 자기 차례에 카드를 낸다 — 자기가 가장 의심하는 인물(개인 의견 60 이상)에 관해
+        /// 실제로 아는 정보를 차례당 1장(회의당 최대 5장). 그런 정보가 없거나 한도면 넘긴다.
+        /// 다른 참가자의 수용 판정 기준은 노션에 없어 TEST_TEMP: 듣는 쪽이 낸 사람을 의심하는 정도(관계 의심도)가 50 미만이면 받아들인다.
+        /// 받아들인 참가자만 기존 개인 의견 계산(06)으로 갱신한다. 실제 진실은 바꾸지 않는다.
+        /// </summary>
+        private bool TryParticipantCardPlay(string actor)
+        {
+            if (_participantPresented.Count(p => p.Presenter == actor) >= ParticipantCardLimit) return false;
+            var suspects = Npcs.GetByContract(CurrentContract.ContractId).Where(n => n.NpcId != actor).Select(n => n.NpcId).Append(PlayerId).Where(id => id != actor);
+            var target = suspects.Select(id => (id, score: Opinions.Get(actor, id))).OrderByDescending(x => x.score).ThenBy(x => x.id, StringComparer.Ordinal).FirstOrDefault();
+            if (target.id == null || target.score < ParticipantSuspectThreshold) return false;
+
+            bool isPolice = PoliceRoster.AllPoliceIds.Contains(actor);
+            var known = Materials.Where(m => m.ContractId == CurrentContract.ContractId
+                    && (m.SubjectNpcId == target.id || (m.IdentifiesPerpetrator && CurrentContract.Truth.PerpetratorId == target.id))
+                    && !_participantPresented.Contains((actor, m.MaterialId))
+                    && (isPolice
+                        ? Clues.Exists(m.MaterialId) && Clues.GetRecord(m.MaterialId).ConfirmedByPoliceIds.Contains(actor)
+                        : Npcs.Exists(actor) && m.StatedInfoIds.Any(Npcs.Get(actor).Knows)))
+                .OrderBy(m => m.MaterialId, StringComparer.Ordinal).FirstOrDefault();
+            if (known == null) return false;
+
+            _participantPresented.Add((actor, known.MaterialId));
+            var play = new ParticipantCardPlay { PresenterId = actor, MaterialId = known.MaterialId, TargetId = target.id };
+            var inputs = OpinionInputsFor(known.MaterialId, distorted: false).ToList();
+            foreach (var judge in MeetingFlow.ParticipantIds.Where(id => id != actor && id != PlayerId))
+            {
+                float trustGap = PoliceRoster.AllPoliceIds.Contains(judge) ? 0f : Relationships.GetSuspicion(judge, actor);
+                if (trustGap >= 50f) continue;
+                play.AcceptedBy.Add(judge);
+                Opinions.ApplySimultaneous(judge, PersonalityOf(judge), inputs);
+            }
+            LastParticipantPlays.Add(play);
+            State.EventLog.TryRecord(new GameEvent(NextEventId("participant-card"), GameEventType.Custom, CurrentContract.ContractId, $"{actor}:{known.MaterialId}"));
+            return true;
+        }
+
         private void AdvanceToPlayerTurn()
         {
+            LastParticipantPlays.Clear();
             do
             {
                 MeetingFlow.AdvanceTurn();
                 string passer = MeetingFlow.CurrentTurnId;
-                if (passer == PlayerId || !Npcs.Exists(passer)) continue;
+                if (passer == PlayerId) continue;
+                if (TryParticipantCardPlay(passer)) continue;
+                LastParticipantPlays.Add(new ParticipantCardPlay { PresenterId = passer });
+                if (!Npcs.Exists(passer)) continue;
                 var skip = Meeting.RecordTurnSkip(NextEventId("npc-skip"), passer, passer);
                 if (skip.WasDuplicateAction) continue;
                 foreach (var observer in MeetingFlow.ParticipantIds.Where(id => id != passer && id != PlayerId && Npcs.Exists(id)))
@@ -1084,7 +1289,10 @@ namespace CaseFileOmission.Game
 
             // 수용한 주장·증거는 그 인물의 개인 의견에만 반영된다(거절하면 반영하지 않는다). 은폐는 대체 카드, 왜곡은 뒤집힌 방향으로 본다.
             string shown = card.ManipulationRecordApplied?.DisplayedClueId ?? clueId;
-            var inputs = OpinionInputsFor(shown, manipulation == CardManipulation.Distort).ToList();
+            // 미리 물리적으로 왜곡해 둔 단서는 그대로 내도 조작된 내용으로 받아들여진다(발각 없음, 06 2026-11-11/12).
+            bool distorted = manipulation == CardManipulation.Distort
+                             || (manipulation == CardManipulation.None && Campaign.PhysicallyDistortedClueIds.Contains(clueId));
+            var inputs = OpinionInputsFor(shown, distorted).ToList();
             foreach (var judgement in LastCardResolution.Judgements.Where(j => j.Participated && j.Accepts))
                 Opinions.ApplySimultaneous(judgement.JudgeId, PersonalityOf(judgement.JudgeId), inputs);
             RevealWitnessIfVerified(shown, lying, manipulation);
@@ -1161,6 +1369,12 @@ namespace CaseFileOmission.Game
                     ExecuteEnding(GameEndingType.Arrest);
                     return conclusion;
                 }
+                if (IsSuicideClaim(accusedId))
+                {
+                    // 자살 주장: 숨진 인물을 스스로 죽음을 초래한 인물로 지목해 과반이 인정하면 공식 결론 '자살'. 가해자 공개 역할은 바꾸지 않는다.
+                    FinalizeContract(ContractOutcome.ResolvedAsSuicide, abandoned: false);
+                    return conclusion;
+                }
                 SetPublicRole(accusedId, PublicRole.Perpetrator);
                 FinalizeContract(ContractOutcome.Resolved, abandoned: false);
             }
@@ -1171,12 +1385,22 @@ namespace CaseFileOmission.Game
             return conclusion;
         }
 
+        /// <summary>
+        /// 자살 결론 주장인지: 이번 의뢰에서 숨진 인물을 지목한 경우(사용자 확정 2026-11-20 — 자살 결론은 기존 회의 투표로 낸다.
+        /// 참가자는 그 인물에 대한 개인 의견 점수로 찬반을 정한다). 실제 진실은 바꾸지 않는다.
+        /// </summary>
+        public bool IsSuicideClaim(string accusedId) =>
+            CurrentContract != null && accusedId != null && Npcs.Exists(accusedId)
+            && Npcs.Get(accusedId).ContractId == CurrentContract.ContractId && !Npcs.Get(accusedId).IsAlive;
+
         /// <summary>결론 없이 회의를 마치고 다음 구간 조사로 돌아간다. 처리하지 못한 의문은 다음 회의에서 가장 먼저 처리한다.</summary>
         public GameActionResult LeaveMeeting()
         {
             var guard = GuardMeeting();
             if (!guard.Success) return guard;
 
+            foreach (var delta in MeetingResolver.DeferUnhandledCarriedOver())
+                ApplySuspicionDelta(delta);
             _carriedOverQuestions = MeetingResolver.Questions.Where(q => !q.IsClosed).ToList();
             CloseMeeting();
             Campaign.MeetingsEndedInContract++;
@@ -1235,6 +1459,17 @@ namespace CaseFileOmission.Game
             return data;
         }
 
+        /// <summary>
+        /// 슬롯 저장(06: 수동 3 + 자동 1). 처리 중이 아닌 안정 경계(CanSave)에서만. 저장 순번을 하나 올리고 같은 슬롯만 덮어쓴다.
+        /// </summary>
+        public bool SaveToSlot(SaveSlotStore store, int slot)
+        {
+            if (store == null || !CanSave) return false;
+            Campaign.SaveSequence++;
+            store.Write(slot, CaptureSave(), Campaign.RunId, Campaign.SaveSequence);
+            return true;
+        }
+
         public static GameSession Load(SaveGameData data, GameSessionConfig config)
         {
             var session = new GameSession(config);
@@ -1270,6 +1505,7 @@ namespace CaseFileOmission.Game
 
         private WorldStateTargets BuildSaveTargets() => new WorldStateTargets
         {
+            CarriedOverQuestions = _carriedOverQuestions,
             Clues = Clues,
             Manipulation = Manipulation,
             ManipulationOutcomes = PhysicalManipulation,
@@ -1306,6 +1542,10 @@ namespace CaseFileOmission.Game
         private void FinalizeContract(ContractOutcome outcome, bool abandoned)
         {
             var contract = CurrentContract;
+            // 체크리스트 1-1: 의뢰 종료 효과(신뢰도·의심도·조직 조건·지원 단서)는 이벤트 ID로 한 번만 적용한다. 먼저 기록해 막는다.
+            if (contract == null || !State.EventLog.TryRecord(new GameEvent($"contract-finalizing:{contract.ContractId}", GameEventType.Custom,
+                    contract.ContractId, abandoned ? "abandoned" : outcome.ToString())))
+                return;
             contract.OfficialConclusion.Outcome = outcome;
             contract.OfficialConclusion.IsFinalized = true;
 
@@ -1321,6 +1561,8 @@ namespace CaseFileOmission.Game
                 var kind = outcome switch
                 {
                     ContractOutcome.Resolved => ContractEndKind.Resolved,
+                    // 공식 결론 '자살' 확정도 정상 해결로 끝난 의뢰다(사용자 확정 2026-11-20: 기존 투표·공식 결론 시스템 그대로).
+                    ContractOutcome.ResolvedAsSuicide => ContractEndKind.Resolved,
                     ContractOutcome.HandlerPoliceDeceased => ContractEndKind.HandlerPoliceDeceased,
                     _ => ContractEndKind.Unsolved
                 };
@@ -1445,6 +1687,7 @@ namespace CaseFileOmission.Game
                 InfoTransfer = new NpcInfoTransferService(_random);
             }
             Planner = new NpcBehaviorPlanner(Npcs, Occupancy, Rooms, InfoTransfer, Relationships, Clues, Capacity, random: _random);
+            Planner.AddCandidateSource(new NpcSceneInvestigationSource(this));
         }
 
         /// <summary>
@@ -1510,6 +1753,11 @@ namespace CaseFileOmission.Game
             {
                 Campaign.NpcMinute += NpcMinutesPerTimeSlot;
                 var results = Planner.ExecuteTurn($"{CurrentContract.ContractId}-m{Campaign.NpcMinute}", CurrentContract.ContractId, Campaign.NpcMinute);
+                PolicePatrolTurn();
+                CheckTheftAbsence();
+                // 07 3-3: 추적 발동 다음 턴부터 경찰 정보 수집 단계(기존 조사 흐름 — 별도 미니게임 없음).
+                if (Pursuit.Stage == PursuitStage.Triggered)
+                    Pursuit.AdvanceToGatheringInformation();
                 foreach (var r in results.Where(r => r.Kind == NpcBehaviorKind.ShareInfo && r.TransferResult != null))
                 {
                     if (!Occupancy.HasPosition(r.NpcId)) continue;
@@ -1560,6 +1808,7 @@ namespace CaseFileOmission.Game
 
         private GameActionResult AfterMeetingAction()
         {
+            TryHandlerAccusation();
             CheckEndings();
             return GameActionResult.Ok();
         }
@@ -1585,6 +1834,54 @@ namespace CaseFileOmission.Game
             RefreshReportUnlocks();
         }
 
+        /// <summary>NPC·경찰이 최근 조사 대상을 살펴본 기록(행동 아이콘용, 저장하지 않음 — 이미 일어난 결과만 보여 준다).</summary>
+        public List<SceneInvestigationRecord> RecentInvestigations { get; private set; } = new List<SceneInvestigationRecord>();
+
+        public void RecordSceneInvestigation(string actorId, string objectId, string roomId, int minute) =>
+            RecentInvestigations.Add(new SceneInvestigationRecord { ActorId = actorId, ObjectId = objectId, RoomId = roomId, Minute = minute });
+
+        /// <summary>경찰 조사 1건에 걸리는 세계 시간(분). 플레이어의 새 대상 조사(1시간)와 같게 둔다(TEST_TEMP).</summary>
+        public const int PoliceInspectMinutes = 60;
+
+        /// <summary>
+        /// 담당 경찰 현장 조사(TEST_TEMP — 07에 경찰의 현장 이동·조사 규칙이 없다. 07 §21 A·B형 "담당 경찰이 해당 방에서 발견한 단서"와
+        /// 「경찰 시스템」 "현재까지 확보한 정보로 판단"을 근거로 만든 임시 동작). 15분 턴마다 호출한다.
+        /// 1시간마다 지금 방의 아직 보지 않은 조사 대상 하나를 살핀다. 그 방을 다 보면 아직 볼 대상이 남은 가장 가까운 방으로 한 칸 옮긴다.
+        /// 자료를 가져가지 않으며 플레이어의 단서 보유·획득에 영향을 주지 않는다.
+        /// </summary>
+        private void PolicePatrolTurn()
+        {
+            string police = HandlerPoliceId;
+            if (police == null || !PoliceLife.IsAlive(police) || !Occupancy.HasPosition(police)) return;
+            string here = Occupancy.GetRoom(police);
+            var objects = GetInvestigationObjects();
+            var todo = objects.FirstOrDefault(o => o.RoomId == here && !Campaign.PoliceInspectedObjectIds.Contains(o.ObjectId));
+            if (todo != null)
+            {
+                if (Campaign.NpcMinute % PoliceInspectMinutes != 0) return; // 살피는 중
+                Campaign.PoliceInspectedObjectIds.Add(todo.ObjectId);
+                RecordSceneInvestigation(police, todo.ObjectId, here, Campaign.NpcMinute);
+                return;
+            }
+
+            // 이 방은 다 봤다 — 볼 대상이 남은 가장 가까운 방으로 한 칸 이동한다.
+            List<string> best = null;
+            foreach (var room in objects.Where(o => !Campaign.PoliceInspectedObjectIds.Contains(o.ObjectId)).Select(o => o.RoomId).Distinct())
+            {
+                var path = Rooms.FindPath(here, room)?.ToList();
+                if (path != null && path.Count > 0 && (best == null || path.Count < best.Count)) best = path;
+            }
+            if (best != null) Occupancy.PlaceAt(police, best[0]);
+        }
+
+        /// <summary>담당 경찰이 그 방에서 발견한 단서 수(07 §21 A·B형 보정): 경찰이 살펴본 대상에 놓인 자료 수.</summary>
+        public int PoliceCluesFoundIn(string roomId)
+        {
+            if (CurrentContract == null || roomId == null) return 0;
+            return Materials.Count(m => m.ContractId == CurrentContract.ContractId && m.Acquisition == MaterialAcquisition.InvestigateRoom
+                                        && m.RoomId == roomId && m.ObjectId != null && Campaign.PoliceInspectedObjectIds.Contains(m.ObjectId));
+        }
+
         /// <summary>06 §21 단서 확인 요청: 같은 방일 때만, 새로 얻은 단서마다 굴린다(검사 빈도는 원문에 없어 임시).</summary>
         private void RollClueConfirmations(GameActionResult result)
         {
@@ -1598,7 +1895,7 @@ namespace CaseFileOmission.Game
             {
                 // 은폐한 단서는 접근 가능 상태가 아니므로 확인 요청 대상에서 뺀다(그 단서 하나에만 적용).
                 if (Clues.Exists(clueId) && Clues.GetRecord(clueId).IsConcealed) continue;
-                var roll = _confirmation.Roll(handler, sameRoom, PoliceSuspicion.GetSuspicion(handler, PlayerId), 0, acceptedLies);
+                var roll = _confirmation.Roll(handler, sameRoom, PoliceSuspicion.GetSuspicion(handler, PlayerId), PoliceCluesFoundIn(PlayerRoom), acceptedLies);
                 if (roll.Requested)
                 {
                     Clues.GetRecord(clueId).MarkConfirmedByPolice(handler);
@@ -1782,6 +2079,57 @@ namespace CaseFileOmission.Game
             Meeting = null;
             MeetingResolver = null;
             MeetingFlow = null;
+        }
+
+        // ───────────────────────── 이민(10, 사용자 확정 2026-11-20) ─────────────────────────
+
+        /// <summary>
+        /// 지금 의뢰에서 플레이어가 가해자로 명시적으로 지목된 사건 상태를 기록한다(player_accused_case_id). 현재 의뢰에만 묶이며
+        /// 다음 의뢰로 넘어가지 않는다. 단순 의심·추측·개인 의견으로는 호출하지 않는다 — 지목 사건을 만드는 쪽이 부른다.
+        /// </summary>
+        /// <summary>담당 경찰이 회의에서 플레이어를 가해자로 공개 지목하는 의심도 기준(사용자 확정: 담당 경찰이 지목 — 수치는 TEST_TEMP).</summary>
+        public const float HandlerAccusationThreshold = 80f;
+
+        /// <summary>
+        /// 회의 중 담당 경찰의 플레이어 의심도가 기준 이상이면(100 미만 — 100은 체포) 경찰이 플레이어를 가해자로 공개 지목한다.
+        /// 이것이 이민 자격의 '지목' 사건이다. 의뢰당 한 번 기록.
+        /// </summary>
+        private void TryHandlerAccusation()
+        {
+            string handler = HandlerPoliceId;
+            if (State.CurrentPhase != GamePhase.Meeting || handler == null || !PoliceLife.IsAlive(handler)) return;
+            float suspicion = PoliceSuspicion.GetSuspicion(handler, PlayerId);
+            if (suspicion >= HandlerAccusationThreshold && suspicion < PolicePursuitController.ArrestThreshold)
+                RecordPlayerAccused("handler-police:" + handler);
+        }
+
+        public bool RecordPlayerAccused(string source)
+        {
+            if (CurrentContract == null || IsGameOver) return false;
+            if (!State.EventLog.TryRecord(new GameEvent($"player-accused:{CurrentContract.ContractId}", GameEventType.Custom, CurrentContract.ContractId, source)))
+                return false;
+            Campaign.PlayerAccusedCaseId = CurrentContract.ContractId;
+            return true;
+        }
+
+        /// <summary>
+        /// 이민(도주) 선택 가능 여부: 실제 사건 유형이 살인인 현재 의뢰에서 플레이어 지목 상태가 기록됐고, 경찰 추적 시작 전이며,
+        /// 체포 조건(살아 있는 경찰 의심도 100, 공식 결론의 플레이어 지목)이 없을 때만.
+        /// </summary>
+        public bool CanEmigrate =>
+            !IsGameOver && CurrentContract != null
+            && CurrentContract.PrimaryCrimeType == CrimeType.Murder
+            && Campaign.PlayerAccusedCaseId == CurrentContract.ContractId
+            && Pursuit.Stage == PursuitStage.NotActive
+            && CurrentContract.OfficialConclusion.OfficiallyAccusedNpcId != PlayerId
+            && !PoliceRoster.AllPoliceIds.Where(PoliceLife.IsAlive).Any(p => PoliceSuspicion.GetSuspicion(p, PlayerId) >= PolicePursuitController.ArrestThreshold);
+
+        /// <summary>이민 선택: 준비 없이 해외로 도주 → 조직에 추적당해 살해. 게임 오버.</summary>
+        public GameActionResult Emigrate()
+        {
+            if (!CanEmigrate) return GameActionResult.Fail(GameActionFailure.InvalidInput);
+            ExecuteEnding(GameEndingType.Immigration);
+            return GameActionResult.Ok();
         }
 
         private void ExecuteEnding(GameEndingType ending)

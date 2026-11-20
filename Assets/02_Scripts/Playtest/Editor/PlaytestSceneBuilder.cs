@@ -75,6 +75,7 @@ namespace CaseFileOmission.Playtest.Editor
 
         private const string InteractionUi = "Assets/00_Art/02_Textures/UI/Interaction/";
         private const string ComputerUi = "Assets/00_Art/02_Textures/UI/Computer/";
+        private const string ReportUi = "Assets/00_Art/02_Textures/UI/Report/";
 
         /// <summary>현장 HUD·상태 아이콘·접근 안내에 쓰는 임시 UI 이미지(09 시안). 메뉴 Case File > 현장 UI 이미지 연결로 열린 씬에도 다시 연결할 수 있다.</summary>
         public static FieldArt LoadFieldArt()
@@ -92,7 +93,16 @@ namespace CaseFileOmission.Playtest.Editor
                 PromptInvestigate = T(InteractionUi + "상호작용_조사.png"),
                 PersonNamePlate = T(InteractionUi + "인물_이름.png"),
                 ItemNamePlate = T(InteractionUi + "아이템_이름.png"),
-                Portraits = Enumerable.Range(0, 10).Select(i => T($"{ComputerUi}컴퓨터_인물이미지_{i:00}.png")).Where(t => t != null).ToArray()
+                Portraits = Enumerable.Range(0, 10).Select(i => T($"{ComputerUi}컴퓨터_인물이미지_{i:00}.png")).Where(t => t != null).ToArray(),
+                ReportCover = T(ReportUi + "보고서_커버.png"),
+                ReportListPaper = T(ReportUi + "보고서_단서목록.png"),
+                ReportItem = T(ReportUi + "보고서_단서목록_선택X.png"),
+                ReportItemSelected = T(ReportUi + "보고서_단서목록_선택.png"),
+                ReportDetail = T(ReportUi + "보고서_단서설명.png"),
+                ReportPhoto = T(ReportUi + "보고서_단서이미지.png"),
+                ReportWriting = T(ReportUi + "보고서_보고서작성하는곳.png"),
+                ClueImages = AssetDatabase.FindAssets("t:Texture2D", new[] { "Assets/00_Art/02_Textures/Clue" })
+                    .Select(g => T(AssetDatabase.GUIDToAssetPath(g))).Where(t => t != null).ToArray()
             };
         }
 

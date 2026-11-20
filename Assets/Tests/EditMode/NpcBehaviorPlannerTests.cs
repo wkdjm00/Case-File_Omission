@@ -231,7 +231,7 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
-        public void BlockedRoute_WithoutAlternative_WaitsThreeTurns_ThenStopsRepeating_KeepsDestination()
+        public void BlockedRoute_WithoutAlternative_WaitsTwoTurns_SuspendsOnThird_KeepsDestination()
         {
             var s = new Scene();
             s.AddNpc("npc-1", HouseLayoutFactory.EntranceHall);
@@ -241,19 +241,19 @@ namespace CaseFileOmission.Tests
             bool hallwayBlocked = true;
             s.Planner.IsRoomBlocked = room => hallwayBlocked && room == HouseLayoutFactory.CorridorStairs;
 
+            // 07 「행동 우선순위 및 경로 막힘」: 막힘 1~2턴은 기다리고, 같은 목표가 막힘 3턴에 도달하면 이동 시도를 보류한다.
             Assert.AreEqual(NpcBehaviorStatus.BlockedWaiting, s.Planner.Act("t1", "npc-1", 0).Status);
             Assert.AreEqual(NpcBehaviorStatus.BlockedWaiting, s.Planner.Act("t2", "npc-1", 10).Status);
-            Assert.AreEqual(NpcBehaviorStatus.BlockedWaiting, s.Planner.Act("t3", "npc-1", 20).Status);
-            Assert.AreEqual(NpcBehaviorStatus.MoveSuspendedAfterBlocked, s.Planner.Act("t4", "npc-1", 30).Status,
-                "07 2026-11-10: 누적 3턴이 지나면 그 이동을 반복하지 않는다.");
+            Assert.AreEqual(NpcBehaviorStatus.MoveSuspendedAfterBlocked, s.Planner.Act("t3", "npc-1", 20).Status,
+                "막힘 3턴에 도달하면 그 이동을 반복하지 않는다.");
 
-            var fifth = s.Planner.Act("t5", "npc-1", 40);
-            Assert.AreEqual(NpcBehaviorKind.Wait, fifth.Kind, "멈춘 이동은 길이 막혀 있는 동안 다시 시도하지 않는다.");
+            var fourth = s.Planner.Act("t4", "npc-1", 30);
+            Assert.AreEqual(NpcBehaviorKind.Wait, fourth.Kind, "멈춘 이동은 길이 막혀 있는 동안 다시 시도하지 않는다.");
             Assert.AreEqual(HouseLayoutFactory.EntranceHall, s.Occupancy.GetRoom("npc-1"));
 
             hallwayBlocked = false;
-            var sixth = s.Planner.Act("t6", "npc-1", 50);
-            Assert.AreEqual(NpcBehaviorKind.MoveBySchedule, sixth.Kind, "목적지는 유지되므로 길이 열리면 다시 이동한다.");
+            var fifth = s.Planner.Act("t5", "npc-1", 40);
+            Assert.AreEqual(NpcBehaviorKind.MoveBySchedule, fifth.Kind, "목적지는 유지되므로 길이 열리면 다시 이동한다.");
             Assert.AreEqual(HouseLayoutFactory.CorridorStairs, s.Occupancy.GetRoom("npc-1"));
         }
 

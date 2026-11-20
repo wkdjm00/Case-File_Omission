@@ -33,6 +33,9 @@ namespace CaseFileOmission.SaveLoad
 
         public MeetingSession Meeting;
 
+        /// <summary>회의를 결론 없이 마칠 때 다음 회의로 넘긴 의문(06 저장 계약 "보류 의문/검증 횟수"). 복원 시 이 목록에 채운다.</summary>
+        public List<CardQuestion> CarriedOverQuestions;
+
         /// <summary>의뢰 보고서 목록. 복원 시 같은 ContractId가 없으면 새 보고서를 만들어 추가한다.</summary>
         public List<ContractReportState> Reports;
 
@@ -112,6 +115,27 @@ namespace CaseFileOmission.SaveLoad
         /// <summary>이번 의뢰에서 회유를 시도했는지(07: 의뢰당 가해자 1명에게 1회).</summary>
         public bool PersuasionAttempted;
 
+        /// <summary>이번 의뢰에서 담당 경찰이 살펴본 조사 대상(TEST_TEMP 경찰 현장 조사). 07 §21 A·B형 "그 방에서 발견한 단서" 보정에 쓴다.</summary>
+        public List<string> PoliceInspectedObjectIds = new List<string>();
+
+        /// <summary>이번 의뢰에서 보유 물리 증거 조작(왜곡)에 성공한 단서. 회의에 내면 조작된 내용으로 판정한다(06 2026-11-12).</summary>
+        public List<string> PhysicallyDistortedClueIds = new List<string>();
+
+        /// <summary>10 player_accused_case_id: 플레이어가 가해자로 명시적으로 지목된 의뢰 ID(현재 의뢰에만 유효). 없으면 null.</summary>
+        public string PlayerAccusedCaseId;
+
+        /// <summary>이번 의뢰에서 플레이어가 훔친(가져간) 물건·시신 자료 ID. 현장에서 사라진 상태.</summary>
+        public List<string> StolenMaterialIds = new List<string>();
+
+        /// <summary>06 절도 부수사건(같은 행위·같은 물건에 하나). 목격·부재 발견한 NPC는 인물별로 따로 기록한다.</summary>
+        public List<TheftIncident> TheftIncidents = new List<TheftIncident>();
+
+        /// <summary>06 저장 계약 run_id: 새 게임마다 새로 만든다.</summary>
+        public string RunId;
+
+        /// <summary>06 저장 계약 save_sequence: 저장할 때마다 1 증가(불러온 뒤에도 이어서 센다).</summary>
+        public int SaveSequence;
+
         /// <summary>플레이어가 실제 가해자를 정답으로 식별한 상태가 검증되었는지(의뢰 보고서 판정 correct_supported).</summary>
         public bool CulpritIdentified;
 
@@ -149,6 +173,12 @@ namespace CaseFileOmission.SaveLoad
                 Meeting = CaptureMeeting(t.Meeting),
                 Reports = t.Reports?.Select(CaptureReport).ToArray() ?? Array.Empty<ContractReportSaveData>(),
                 CaseBoards = t.CaseBoards?.Select(CaptureCaseBoard).ToArray() ?? Array.Empty<CaseBoardSaveData>(),
+                CarriedOverQuestions = t.CarriedOverQuestions?.Where(q => q != null && !q.IsClosed).Select(q => new CardQuestionDto
+                {
+                    QuestionId = q.QuestionId, JudgeId = q.JudgeId, PresenterId = q.PresenterId, ClueId = q.ClueId,
+                    PresenterIsLying = q.PresenterIsLying, State = q.State, AdditionalVerificationsUsed = q.AdditionalVerificationsUsed,
+                    DeferCount = q.DeferCount
+                }).ToArray() ?? Array.Empty<CardQuestionDto>(),
                 MainCase = CaptureMainCase(t),
                 Positions = t.Occupancy?.AllPositions
                     .Select(p => new OccupantPositionDto { OccupantId = p.Key, RoomId = p.Value })
@@ -184,6 +214,7 @@ namespace CaseFileOmission.SaveLoad
             RestoreMeeting(data.Meeting, t.Meeting, logger);
             RestoreReports(data.Reports, t, logger);
             RestoreCaseBoards(data.CaseBoards, t, logger);
+            RestoreCarriedOverQuestions(data.CarriedOverQuestions, t, logger);
             RestoreMainCase(data.MainCase, t, logger);
             RestorePositions(data.Positions, t.Occupancy, logger);
             RestoreEvents(data.GlobalEvents, t.EventLog, logger);
@@ -259,6 +290,7 @@ namespace CaseFileOmission.SaveLoad
                 Outcome = c.OfficialConclusion.Outcome,
                 ConditionType = c.OrgCondition.Type,
                 ConditionTargetId = c.OrgCondition.TargetId,
+                ConditionTargetIds = c.OrgCondition.TargetIds.ToArray(),
                 ConditionRequiresDelivery = c.OrgCondition.RequiresDeliveryToOrganization,
                 ConditionJudged = c.OrgCondition.Achieved.HasValue,
                 ConditionAchieved = c.OrgCondition.Achieved == true,
@@ -357,6 +389,7 @@ namespace CaseFileOmission.SaveLoad
 
             c.OrgCondition.Type = d.ConditionType;
             c.OrgCondition.TargetId = d.ConditionTargetId;
+            c.OrgCondition.SetTargetIds(d.ConditionTargetIds);
             c.OrgCondition.RequiresDeliveryToOrganization = d.ConditionRequiresDelivery;
             c.OrgCondition.Achieved = d.ConditionJudged ? d.ConditionAchieved : (bool?)null;
             if (d.ConditionLocked)
@@ -395,6 +428,13 @@ namespace CaseFileOmission.SaveLoad
                 HandlerQueue = t.Campaign?.HandlerQueue.ToArray() ?? Array.Empty<string>(),
                 LastHandlerPoliceId = t.Campaign?.LastHandlerPoliceId,
                 PersuasionAttempted = t.Campaign?.PersuasionAttempted ?? false,
+                PoliceInspectedObjectIds = t.Campaign?.PoliceInspectedObjectIds.ToArray() ?? Array.Empty<string>(),
+                PhysicallyDistortedClueIds = t.Campaign?.PhysicallyDistortedClueIds.ToArray() ?? Array.Empty<string>(),
+                PlayerAccusedCaseId = t.Campaign?.PlayerAccusedCaseId,
+                StolenMaterialIds = t.Campaign?.StolenMaterialIds.ToArray() ?? Array.Empty<string>(),
+                TheftIncidents = t.Campaign?.TheftIncidents.ToArray() ?? Array.Empty<TheftIncident>(),
+                RunId = t.Campaign?.RunId,
+                SaveSequence = t.Campaign?.SaveSequence ?? 0,
                 CulpritIdentified = t.Campaign?.CulpritIdentified ?? false,
                 PublicRoles = t.Campaign?.PublicRoles.Select(p => new PublicRoleDto { NpcId = p.Key, Role = p.Value }).ToArray() ?? Array.Empty<PublicRoleDto>(),
                 Opinions = t.Opinions?.All.Select(o => new OpinionDto { Observer = o.Key.Observer, Suspect = o.Key.Suspect, Value = o.Value }).ToArray() ?? Array.Empty<OpinionDto>(),
@@ -481,6 +521,13 @@ namespace CaseFileOmission.SaveLoad
                 t.Campaign.HandlerQueue = (d.HandlerQueue ?? Array.Empty<string>()).Where(id => PoliceRoster.AllPoliceIds.Contains(id)).ToList();
                 t.Campaign.LastHandlerPoliceId = PoliceRoster.AllPoliceIds.Contains(d.LastHandlerPoliceId) ? d.LastHandlerPoliceId : null;
                 t.Campaign.PersuasionAttempted = d.PersuasionAttempted;
+                t.Campaign.PoliceInspectedObjectIds = (d.PoliceInspectedObjectIds ?? Array.Empty<string>()).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
+                t.Campaign.PhysicallyDistortedClueIds = (d.PhysicallyDistortedClueIds ?? Array.Empty<string>()).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
+                t.Campaign.PlayerAccusedCaseId = string.IsNullOrEmpty(d.PlayerAccusedCaseId) ? null : d.PlayerAccusedCaseId;
+                t.Campaign.StolenMaterialIds = (d.StolenMaterialIds ?? Array.Empty<string>()).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
+                t.Campaign.TheftIncidents = (d.TheftIncidents ?? Array.Empty<TheftIncident>()).Where(i => i != null && !string.IsNullOrEmpty(i.IncidentId)).ToList();
+                t.Campaign.RunId = d.RunId;
+                t.Campaign.SaveSequence = Math.Max(0, d.SaveSequence);
                 t.Campaign.CulpritIdentified = d.CulpritIdentified;
                 foreach (var r in d.PublicRoles ?? Array.Empty<PublicRoleDto>())
                 {
@@ -992,6 +1039,28 @@ namespace CaseFileOmission.SaveLoad
         };
 
         /// <summary>단서가 아닌(장식이 아닌데 단서 저장소에 없는) 항목과 그 항목을 가리키는 연결선은 건너뛴다.</summary>
+        /// <summary>넘긴 의문 복원. 판정자·제시자가 없는 의문(사망 등으로 사라진 참조)은 건너뛰고 기록한다. 판정은 다시 하지 않는다.</summary>
+        private static void RestoreCarriedOverQuestions(CardQuestionDto[] questions, WorldStateTargets t, GameLogger logger)
+        {
+            if (questions == null || t.CarriedOverQuestions == null) return;
+            foreach (var d in questions)
+            {
+                if (d == null || string.IsNullOrEmpty(d.QuestionId) || !IsDefined(d.State)) { Log(logger, "SAVE_INVALID_QUESTION", "넘긴 의문의 ID나 상태가 올바르지 않아 건너뜁니다."); continue; }
+                if (t.CarriedOverQuestions.Any(q => q.QuestionId == d.QuestionId)) continue;
+                if (!PoliceRoster.AllPoliceIds.Contains(d.JudgeId) && !NpcKnown(t, d.JudgeId))
+                {
+                    Log(logger, "SAVE_UNKNOWN_NPC_ID", "넘긴 의문의 판정자가 없어 건너뜁니다.", npcId: d.JudgeId);
+                    continue;
+                }
+                t.CarriedOverQuestions.Add(new CardQuestion
+                {
+                    QuestionId = d.QuestionId, JudgeId = d.JudgeId, PresenterId = d.PresenterId, ClueId = d.ClueId,
+                    PresenterIsLying = d.PresenterIsLying, State = d.State, AdditionalVerificationsUsed = Math.Max(0, d.AdditionalVerificationsUsed),
+                    DeferCount = Math.Max(0, d.DeferCount)
+                });
+            }
+        }
+
         private static void RestoreCaseBoards(CaseBoardSaveData[] boards, WorldStateTargets t, GameLogger logger)
         {
             if (boards == null || t.CaseBoards == null)

@@ -304,6 +304,19 @@ namespace CaseFileOmission.ContractContent
                     condition.TargetId = candidates.Count == 0 ? null : candidates[_random.Next(candidates.Count)].NpcId;
                     break;
                 }
+                case OrganizationConditionType.DisguiseAsSuicide:
+                    // 자살로 위장할 사망자 = 핵심 사건의 피해자(숨진 경우). 공식 결론에서 이 인물을 '스스로 죽음을 초래한 인물'로 확정해야 한다.
+                    condition.TargetId = EvidenceMaterialGenerator.IsAliveAfterIncident(built.Timeline, built.Npcs, built.Contract.Truth.VictimId)
+                        ? null : built.Contract.Truth.VictimId;
+                    break;
+                case OrganizationConditionType.ConcealCulpritClues:
+                    // 05: 서로 다른 ID의 범인 특정 단서 2개. 플레이어가 실제로 얻을 수 있는 사실 자료만(거짓·조작 자료 제외).
+                    condition.SetTargetIds(built.Materials
+                        .Where(m => m.IdentifiesPerpetrator && !m.IsFalseOrFabricated)
+                        .Select(m => m.MaterialId)
+                        .OrderBy(id => id, StringComparer.Ordinal)
+                        .Take(2));
+                    break;
             }
             condition.RequiresDeliveryToOrganization = false;
         }
@@ -317,6 +330,11 @@ namespace CaseFileOmission.ContractContent
                     condition.TargetId != null && built.GetMaterial(condition.TargetId) != null,
                 OrganizationConditionType.DesignateOfficialCulprit =>
                     condition.TargetId != null && built.Npcs.Exists(condition.TargetId),
+                OrganizationConditionType.DisguiseAsSuicide =>
+                    condition.TargetId != null && built.Npcs.Exists(condition.TargetId),
+                // 2개 미만이면 이 조건을 만족시킬 수 없으므로 후보를 버리고 다시 만든다(05: 후보 조건).
+                OrganizationConditionType.ConcealCulpritClues =>
+                    condition.TargetIds.Count == 2 && condition.TargetIds.All(id => built.GetMaterial(id) != null),
                 _ => true
             };
             if (!valid)

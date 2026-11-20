@@ -96,7 +96,10 @@ namespace CaseFileOmission.Playtest
             foreach (var id in flow.ParticipantIds)
             {
                 bool turn = id == flow.CurrentTurnId;
-                string name = id == s.PlayerId ? "나" : PoliceRoster.AllPoliceIds.Contains(id) ? PlaytestTexts.PoliceName(id) + "(담당)" : PlaytestTexts.TempName(s, id);
+                // 09: 의문을 제기한 참가자는 ?를 독립적으로 표시한다(해결·포기되면 사라진다).
+                bool questioning = s.MeetingResolver.Questions.Any(q => !q.IsClosed && q.JudgeId == id);
+                string name = (id == s.PlayerId ? "나" : PoliceRoster.AllPoliceIds.Contains(id) ? PlaytestTexts.PoliceName(id) + "(담당)" : PlaytestTexts.TempName(s, id))
+                              + (questioning ? "  ?" : "");
                 var p = Ui.Panel(top, "P", turn ? Ui.AccentColor : Ui.ButtonColor);
                 var t = Ui.Label(p, (turn ? "▶ " : "") + name, 19, Ui.TextColor, TextAnchor.MiddleCenter);
                 Ui.Stretch(t.rectTransform);
@@ -136,7 +139,8 @@ namespace CaseFileOmission.Playtest
             {
                 string qid = q.QuestionId;
                 bool support = HasSupport(q.ClueId);
-                Ui.Line(content, $"{JudgeName(q.JudgeId)} → '{PlaytestTexts.MaterialTitle(s, q.ClueId)}'에 의문 ({StateName(q.State)}, 추가 검증 {q.AdditionalVerificationsUsed}/{MeetingCardResolver.MaxAdditionalVerifications})", 17);
+                Ui.Line(content, $"? {JudgeName(q.JudgeId)} ({StateName(q.State)}, 추가 검증 {q.AdditionalVerificationsUsed}/{MeetingCardResolver.MaxAdditionalVerifications})", 18, new Color(1f, 0.85f, 0.5f));
+                Ui.Line(content, QuestionText(q.ClueId), 17);
                 var row = Ui.Row(content, 36);
                 Ui.Button(row, support ? "근거로 대응" : "대응(근거 없음)", () => Do(s.RespondToQuestion(qid, support)), true, 36, null, 15);
                 Ui.Button(row, "포기", () => Do(s.GiveUpQuestion(qid)), true, 36, null, 15);
@@ -156,7 +160,7 @@ namespace CaseFileOmission.Playtest
             {
                 string nid = id;
                 var npc = s.Npcs.Get(nid);
-                Ui.Button(content, $"{PlaytestTexts.TempName(s, nid)} · {PlaytestTexts.PublicRole(s, npc)}{(npc.IsAlive ? "" : " (사망)")}", () => { _accused = nid; Rebuild(); },
+                Ui.Button(content, $"{PlaytestTexts.TempName(s, nid)} · {PlaytestTexts.PublicRole(s, npc)}{(npc.IsAlive ? "" : " (사망 — 지목하면 '자살' 결론 주장)")}", () => { _accused = nid; Rebuild(); },
                     true, 40, nid == _accused ? Ui.AccentColor : (Color?)null, 17);
             }
             var last = s.MeetingFlow.LastConclusion;
@@ -193,21 +197,104 @@ namespace CaseFileOmission.Playtest
             Ui.Button(row, "끌어오기(은폐)", () => { _manipulation = CardManipulation.Conceal; Rebuild(); }, flow.PlayerReserve.Count > 0, 38, _manipulation == CardManipulation.Conceal ? Ui.AccentColor : (Color?)null, 16);
             Ui.Toggle(controls, "거짓으로 바꾸어 말한다", _lying, v => _lying = v);
             Ui.Button(controls, "카드 제시", Present, myTurn && _selectedCard != null, 46, Ui.AccentColor);
-            Ui.Button(controls, flow.PresentedThisTurn(s.PlayerId) == 0 ? "차례 넘기기 (카드 없이 — 의심 상승)" : "차례 끝내기", () => Do(s.EndPlayerTurn()), myTurn, 42);
+            Ui.Button(controls, flow.PresentedThisTurn(s.PlayerId) == 0 ? "차례 넘기기 (카드 없이 — 의심 상승)" : "차례 끝내기", () =>
+            {
+                var result = s.EndPlayerTurn();
+                Do(result);
+                if (result.Success && S.State.CurrentPhase == GamePhase.Meeting) _g.ShowDialogue(TurnStatements());
+            }, myTurn, 42);
         }
 
         private void Present()
         {
             var s = S;
-            var result = s.PresentCard(_selectedCard, _manipulation, _lying, HasSupport(_selectedCard));
+            string card = _selectedCard;
+            var result = s.PresentCard(card, _manipulation, _lying, HasSupport(card));
             if (result.Success)
             {
-                _g.Log($"카드 제시: {PlaytestTexts.MaterialTitle(s, _selectedCard)} ({_manipulation}{(_lying ? ", 거짓" : "")})");
+                _g.Log($"카드 제시: {PlaytestTexts.MaterialTitle(s, card)} ({_manipulation}{(_lying ? ", 거짓" : "")})");
                 _selectedCard = null;
                 _manipulation = CardManipulation.None;
                 _lying = false;
             }
             Do(result);
+            if (result.Success && S.State.CurrentPhase == GamePhase.Meeting) _g.ShowDialogue(ReactionLines(card));
+        }
+
+        // ───────── 회의 대사(09 2026-11-17: 발언·주장 !, 의문 ?) ─────────
+        // 대사 문장은 원문에 없어 판정 결과·자료 내용에서 만든 TEST_TEMP 문장이다. 판정·상태는 바꾸지 않고 보여 주기만 한다.
+
+        /// <summary>카드 제시 직후 참가자별 반응을 한 사람씩 대사로 보인다. 의문을 제기한 사람은 무엇이 의심스러운지 말한다.</summary>
+        private List<(string, string)> ReactionLines(string clueId)
+        {
+            var s = S;
+            var pages = new List<(string, string)>();
+            var r = s.LastCardResolution;
+            if (r == null) return pages;
+            foreach (var j in r.Judgements.Where(j => j.Participated))
+            {
+                string mark = j.RaisesQuestion || j.LieDetected ? "  ?" : "  !";
+                string line;
+                if (j.LieDetected) line = $"\"지금 그 말, 제가 알고 있는 것과 다르군요. '{Title(clueId)}'의 내용을 바꿔 말하고 있지 않습니까?\"";
+                else if (j.RaisesQuestion) line = QuestionText(clueId);
+                else if (j.Accepts) line = $"\"'{Title(clueId)}'라… 그렇다면 납득이 갑니다.\"";
+                else line = $"\"'{Title(clueId)}'만으로는 받아들일 수 없습니다.\"";
+                pages.Add((JudgeName(j.JudgeId) + mark, line));
+            }
+            return pages;
+        }
+
+        /// <summary>의문의 내용: 제시된 자료가 말하는 시각·장소를 짚어 그 근거를 묻는다.</summary>
+        private string QuestionText(string clueId)
+        {
+            var m = PlaytestTexts.FindMaterial(S, clueId);
+            string about = m != null && m.AboutRoomId != null
+                ? $"{PlaytestTexts.Clock(m.AboutMinute)}에 {PlaytestTexts.Room(m.AboutRoomId)}이라는 부분"
+                : "그 내용";
+            return $"\"'{Title(clueId)}' — {about}이 정말 맞습니까? 그걸 뒷받침할 다른 자료가 있나요?\"";
+        }
+
+        /// <summary>
+        /// 차례를 넘긴 뒤 다른 참가자들이 자기 차례에 하는 발언(!). NPC·경찰 차례의 카드 선택 규칙이 원문에 없어 카드는 내지 않고,
+        /// 07 「개인 의견 점수 구간별 행동·대사 표현(1-1)」에 따라 가장 의심하는 인물에 대한 태도만 말한다.
+        /// </summary>
+        private List<(string, string)> TurnStatements()
+        {
+            var s = S;
+            var pages = new List<(string, string)>();
+            var suspects = PlaytestTexts.AllContractNpcIds(s);
+            // 사용자 확정 2026-11-20: 다른 참가자도 자기 차례에 카드를 낸다(가장 의심하는 인물에 관해 아는 정보 1장). 낸 카드는 그대로 보여 준다.
+            var plays = s.LastParticipantPlays.Where(p => p.MaterialId != null).ToList();
+            foreach (var p in plays)
+            {
+                string target = p.TargetId == s.PlayerId ? "탐정" : PlaytestTexts.TempName(s, p.TargetId);
+                pages.Add((JudgeName(p.PresenterId) + "  !",
+                    $"\"{target}에 관해 제가 아는 게 있습니다. '{Title(p.MaterialId)}' — {PlaytestTexts.MaterialBody(s, p.MaterialId)}\""
+                    + (p.AcceptedBy.Count > 0 ? $"\n(받아들인 사람: {string.Join(", ", p.AcceptedBy.Select(JudgeName))})" : "\n(아무도 받아들이지 않았다)")));
+            }
+            foreach (var id in s.MeetingFlow.ParticipantIds.Where(p => p != s.PlayerId && plays.All(x => x.PresenterId != p)))
+            {
+                var target = suspects.Where(x => x != id).OrderByDescending(x => s.Opinions.Get(id, x)).FirstOrDefault();
+                if (target == null) continue;
+                float score = s.Opinions.Get(id, target);
+                string name = PlaytestTexts.TempName(s, target);
+                string line = score switch
+                {
+                    < 20 => $"\"{name} 씨의 설명은 대체로 믿을 만해 보입니다.\"",
+                    < 40 => $"\"{name} 씨 말에 조금 걸리는 데가 있긴 합니다만…\"",
+                    < 60 => $"\"아직 판단하기 이릅니다. {name} 씨에 대해서는 더 확인이 필요합니다.\"",
+                    < 80 => $"\"{name} 씨의 설명에는 모순이 있어요. 그때 정확히 어디 있었습니까?\"",
+                    _ => $"\"{name} 씨, 당신이 한 일 아닙니까?\""
+                };
+                pages.Add((JudgeName(id) + "  !", line));
+            }
+            return pages;
+        }
+
+        private string Title(string clueId)
+        {
+            var m = PlaytestTexts.FindMaterial(S, clueId);
+            return m?.Title ?? PlaytestTexts.MaterialTitle(S, clueId);
         }
 
         private void ProposeConclusion()
