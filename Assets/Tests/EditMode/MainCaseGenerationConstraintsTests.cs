@@ -180,7 +180,8 @@ namespace CaseFileOmission.Tests
 
             int counter = 0;
             var pipeline = new ContractPipeline(ContractGenerationConfig.CreateDefault(), new Random(31));
-            foreach (var plan in expected)
+            // 배치 순서(PR #2): 날짜 하한이 가장 늦은 생존자 인계 기록 → 참가자 운영 규칙 안내문 → 학생 정보 획득 메모.
+            foreach (var plan in new[] { expected[2], expected[0], expected[1] })
             {
                 var actual = s.PlanMainCaseConstraints();
                 Assert.IsNotNull(actual);
