@@ -112,6 +112,95 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void NpcReportsFirsthandInformationToHandlerPoliceOnlyOnce()
+        {
+            var s = StartContract(seed: 71);
+            var reporter = s.Npcs.GetByContract(s.CurrentContract.ContractId)
+                .First(n => n.IsAlive && n.NpcId != s.CurrentContract.Truth.PerpetratorId && s.Occupancy.HasPosition(n.NpcId));
+            string room = s.PlayerRoom;
+            s.Occupancy.PlaceAt(reporter.NpcId, room);
+            s.Occupancy.PlaceAt(s.HandlerPoliceId, room);
+            const string infoId = "test-firsthand-report-fact";
+            const string sourceEventId = "test-firsthand-report-event";
+            reporter.MarkWitnessed(sourceEventId);
+            reporter.LearnInfo(infoId, NpcJudgement.Believe, new NpcInfoRecord
+            {
+                State = NpcInformationState.KnowsFact,
+                Method = NpcInfoAcquisitionMethod.DirectObservation,
+                Minute = s.Campaign.NpcMinute,
+                SourceEventId = sourceEventId
+            });
+
+            var source = new NpcInteractionBehaviorSource(s);
+            var candidate = source.GetCandidates(reporter, room, s.Campaign.NpcMinute)
+                .FirstOrDefault(x => x.Kind == NpcBehaviorKind.Report && x.InfoId == infoId);
+            Assert.IsNotNull(candidate, "직접 목격한 사실은 담당 경찰과 같은 방에서 신고 후보가 된다.");
+
+            candidate.Execute();
+
+            Assert.IsTrue(s.HasNpcReportedInfo(reporter.NpcId, infoId));
+            var report = s.Materials.Single(m => m.MaterialId.StartsWith("npc-report-material:", StringComparison.Ordinal)
+                && m.StatedInfoIds.Contains(infoId));
+            Assert.AreEqual(reporter.NpcId, report.SourceNpcId);
+            Assert.IsTrue(s.Capacity.GetHeldClues(s.HandlerPoliceId).Contains(report.MaterialId));
+            Assert.IsFalse(s.Clues.Exists(report.MaterialId), "경찰에 한 신고 자료를 플레이어에게 자동 지급하지 않는다.");
+            Assert.IsFalse(s.ReportNpcInfoToPolice(reporter.NpcId, infoId, room, s.Campaign.NpcMinute),
+                "같은 NPC·정보의 신고는 한 번만 처리한다.");
+        }
+
+        [Test]
+        public void NpcDoesNotAutomaticallyReportTransferredRumorToPolice()
+        {
+            var s = StartContract(seed: 72);
+            var reporter = s.Npcs.GetByContract(s.CurrentContract.ContractId)
+                .First(n => n.IsAlive && s.Occupancy.HasPosition(n.NpcId));
+            string room = s.PlayerRoom;
+            s.Occupancy.PlaceAt(reporter.NpcId, room);
+            s.Occupancy.PlaceAt(s.HandlerPoliceId, room);
+            const string infoId = "test-transferred-rumor";
+            reporter.LearnInfo(infoId, NpcJudgement.Believe, new NpcInfoRecord
+            {
+                State = NpcInformationState.BelievesTrue,
+                Method = NpcInfoAcquisitionMethod.NpcTransfer,
+                Minute = s.Campaign.NpcMinute,
+                SourceEventId = "rumor-source-event",
+                SourcePersonId = s.Npcs.GetByContract(s.CurrentContract.ContractId)
+                    .First(n => n.NpcId != reporter.NpcId).NpcId
+            });
+
+            var candidates = new NpcInteractionBehaviorSource(s)
+                .GetCandidates(reporter, room, s.Campaign.NpcMinute);
+            Assert.IsFalse(candidates.Any(x => x.Kind == NpcBehaviorKind.Report && x.InfoId == infoId),
+                "NPC 간 전달로 들은 믿음은 직접 목격한 사실로 바꾸어 신고하지 않는다.");
+        }
+
+        [Test]
+        public void PoliceDiscoversNewBodyDuringInvestigation_AndAddsItToPoliceEvidence()
+        {
+            var s = StartContract(seed: 73);
+            var target = s.Npcs.GetByContract(s.CurrentContract.ContractId)
+                .First(n => n.IsAlive
+                    && n.NpcId != s.CurrentContract.Truth.PerpetratorId
+                    && n.NpcId != s.CurrentContract.Truth.VictimId
+                    && s.Occupancy.HasPosition(n.NpcId));
+            string policeRoom = s.Occupancy.GetRoom(s.HandlerPoliceId);
+            s.Occupancy.PlaceAt(target.NpcId, policeRoom);
+            target.MarkDeceased();
+            s.Campaign.LaterVictimIds.Add(target.NpcId);
+
+            Assert.IsTrue(s.PassTime(1).Success);
+
+            var body = s.Materials.SingleOrDefault(m => m.IsBody && m.SubjectNpcId == target.NpcId);
+            Assert.IsNotNull(body, "조사 중 사망한 인물에는 별도 시신 자료가 생긴다.");
+            Assert.AreEqual(policeRoom, body.RoomId);
+            Assert.IsTrue(s.Campaign.PoliceInspectedObjectIds.Contains(body.ObjectId));
+            Assert.IsTrue(s.Capacity.GetHeldClues(s.HandlerPoliceId).Contains(body.MaterialId));
+            Assert.IsTrue(s.State.EventLog.GetOrdered().Any(e =>
+                e.EventId == $"police-found-body:{s.CurrentContract.ContractId}:{target.NpcId}"));
+            Assert.IsFalse(s.Clues.Exists(body.MaterialId), "경찰의 시신 발견만으로 플레이어가 단서를 자동 획득하지 않는다.");
+        }
+
+        [Test]
         public void NewGame_GivesDiaryAtStart_AndDeathReportAfterPrologue()
         {
             var s = NewSession();
