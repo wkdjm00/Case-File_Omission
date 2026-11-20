@@ -238,15 +238,24 @@ namespace CaseFileOmission.Game
             if (PendingOffer == null)
             {
                 var constraints = PlanMainCaseConstraints();
-                PendingOffer = _pipeline.TryGenerate(() => $"contract-{++Campaign.ContractCounter}", out var result, Campaign.PreviousConditionType, constraints);
-                // 제약을 지키는 의뢰를 끝내 만들지 못하면 제약 없이 일반 의뢰를 제안한다(다음 의뢰에서 다시 배치를 시도한다).
+                PendingOffer = _pipeline.TryGenerate(
+                    () => $"contract-{++Campaign.ContractCounter}",
+                    out var result,
+                    Campaign.PreviousConditionType,
+                    constraints);
+                LastGenerationResult = result;
+
+                // 확정된 메인 사건 단서의 조건을 맞춘 의뢰가 생성되지 않으면 실패로 돌려준다.
+                // 제약 없는 일반 의뢰로 우회하면 필수 단서의 획득 경로가 보장되지 않으므로 대체 의뢰를 만들지 않는다.
                 if (PendingOffer == null && constraints != null)
                 {
+                    string errors = result == null || result.LastErrors.Count == 0
+                        ? "검증 가능한 후보를 만들지 못했습니다."
+                        : string.Join(", ", result.LastErrors);
                     Logger.LogError("MAINCASE_CONSTRAINT_UNMET", nameof(GameSession), State.CurrentPhase,
-                        $"메인 사건 단서 '{constraints.PlannedClueName}'의 생성 제약을 지키는 의뢰를 만들지 못해 일반 의뢰로 제안합니다.", recoverable: true);
-                    PendingOffer = _pipeline.TryGenerate(() => $"contract-{++Campaign.ContractCounter}", out result, Campaign.PreviousConditionType);
+                        $"메인 사건 단서 '{constraints.PlannedClueName}'의 생성에 실패했습니다: {errors}",
+                        recoverable: true);
                 }
-                LastGenerationResult = result;
             }
             return PendingOffer;
         }
@@ -264,6 +273,7 @@ namespace CaseFileOmission.Game
         public ContractConstraints PlanMainCaseConstraints()
         {
             if (MainCase.CurrentStage == MainCaseTruthStage.PowerTruth) return PlanPowerTruthConstraints();
+            if (MainCase.CurrentStage == MainCaseTruthStage.ExperimentTruth) return PlanExperimentTruthConstraints();
             if (MainCase.CurrentStage != MainCaseTruthStage.SystemicTruth) return null;
             var rules = _mainCaseRules;
             bool Missing(string name) => !MainCase.HasAcquired(name);
@@ -302,6 +312,61 @@ namespace CaseFileOmission.Game
         /// 보관 오브젝트는 원문 보관 설명에 맞는 기존 조사 오브젝트를 골랐다: 개인 서신은 침실 '편지', 계약 문서는 서재 '계약서',
         /// 회계 장부류는 서재 '장부', 서류함·내부 서류는 서재 '서류 더미'(주택 오브젝트 목록에 '서류함'이 따로 없음).
         /// </summary>
+        private ContractConstraints PlanExperimentTruthConstraints()
+        {
+            // 03 최신 확정 규칙: 실제 살인·방법·도구·관계 ID·피해자 직업·사건 날짜를 모두 만족해야 한다.
+            // 문서는 현 의뢰에 이미 존재하는 조사 오브젝트에 배치한다. 새 인물·장소·소품은 생성하지 않는다.
+            if (!MainCase.HasAcquired(MainCaseClueNames.ParticipantOperatingRulesNotice))
+            {
+                return new ContractConstraints
+                {
+                    PlannedClueName = MainCaseClueNames.ParticipantOperatingRulesNotice,
+                    RequireMurder = true,
+                    VictimOccupation = "학생",
+                    MethodId = "METHOD-03",
+                    ToolId = "TOOL-02",
+                    RelationshipId = "REL-01",
+                    EarliestIncidentDate = "1984-10-19",
+                    HolderIsVictim = true,
+                    DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Bedroom, "편지")
+                };
+            }
+
+            if (!MainCase.HasAcquired(MainCaseClueNames.StudentInfoAcquisitionMemo))
+            {
+                return new ContractConstraints
+                {
+                    PlannedClueName = MainCaseClueNames.StudentInfoAcquisitionMemo,
+                    RequireMurder = true,
+                    VictimOccupation = "사무원",
+                    MethodId = "METHOD-06",
+                    ToolId = "TOOL-05",
+                    RelationshipId = "REL-06",
+                    EarliestIncidentDate = "1984-10-01",
+                    HolderIsVictim = true,
+                    DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
+                };
+            }
+
+            if (!MainCase.HasAcquired(MainCaseClueNames.SurvivorHandoverRecord))
+            {
+                return new ContractConstraints
+                {
+                    PlannedClueName = MainCaseClueNames.SurvivorHandoverRecord,
+                    RequireMurder = true,
+                    VictimOccupation = "공무원",
+                    MethodId = "METHOD-02",
+                    ToolId = "TOOL-01",
+                    RelationshipId = "REL-05",
+                    EarliestIncidentDate = "1984-11-20",
+                    HolderIsVictim = true,
+                    DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
+                };
+            }
+
+            return null;
+        }
+
         private ContractConstraints PlanPowerTruthConstraints()
         {
             string Study(string obj) => CaseCatalog.ObjectId(HouseLayoutFactory.Study, obj);
@@ -1070,10 +1135,15 @@ namespace CaseFileOmission.Game
 
             MeetingFlow = flow;
             // 07·06 2026-11-13: 그 장소에 있는 생존 인물만 참가한다(실종자·사망자·미배치 인물 제외).
-            foreach (var npc in Npcs.GetByContract(CurrentContract.ContractId).Where(n => n.IsAlive && Occupancy.HasPosition(n.NpcId)))
+            // 회의는 시작 시점에 실제 회의 장소(플레이어가 있는 방)에 있는 생존 인물만 확정한다.
+            // 사건 데이터에 등록되어 있거나 다른 방에 있다는 이유로 참가자를 자동 소환하지 않는다.
+            string meetingRoomId = PlayerRoom;
+            foreach (var npc in Npcs.GetByContract(CurrentContract.ContractId)
+                         .Where(n => n.IsAlive && Occupancy.HasPosition(n.NpcId) && Occupancy.GetRoom(n.NpcId) == meetingRoomId))
                 MeetingFlow.AddParticipant(npc.NpcId, MeetingParticipantKind.Npc);
-            if (HandlerPoliceId != null && PoliceLife.IsAlive(HandlerPoliceId))
-                MeetingFlow.AddParticipant(HandlerPoliceId, MeetingParticipantKind.Police);
+            foreach (var policeId in PoliceRoster.AllPoliceIds
+                         .Where(id => PoliceLife.IsAlive(id) && Occupancy.HasPosition(id) && Occupancy.GetRoom(id) == meetingRoomId))
+                MeetingFlow.AddParticipant(policeId, MeetingParticipantKind.Police);
 
             MeetingFlow.ApplyConfirmedTurnOrder(_random);
             // NPC·경찰이 자기 차례에 어떤 카드를 낼지는 원문에 판단 알고리즘이 없어 그 차례는 넘긴다(의심도 변화 없음) — 플레이어 차례까지 진행.

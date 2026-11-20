@@ -47,12 +47,18 @@ namespace CaseFileOmission.ContractContent
             var methods = CaseCatalog.MethodsFor(truth.VictimDeparted && crime == CrimeType.Missing ? CrimeType.AssaultInjury : crime);
             // 메인 사건 단서 제약(예: 칼 TOOL-01)이 있으면 그 도구를 쓸 수 있는 방법만 고른다. 후보가 없으면 제약 검증에서 버려진다.
             var allowed = constraints?.FilterMethods(methods) ?? methods;
-            if (allowed.Count > 0) methods = allowed;
-            truth.MethodId = methods[random.Next(methods.Count)];
+            // exact MethodId 제약이 유효하지 않아도 임의의 다른 방법으로 조용히 대체하지 않는다.
+            // 검증 단계에서 해당 후보를 폐기하도록 제약 ID를 그대로 남긴다.
+            truth.MethodId = allowed.Count > 0
+                ? allowed[random.Next(allowed.Count)]
+                : constraints?.MethodId ?? methods[random.Next(methods.Count)];
             var tools = CaseCatalog.ToolsFor(truth.MethodId);
-            truth.ToolId = constraints?.ToolId != null && tools.Contains(constraints.ToolId) ? constraints.ToolId : tools[random.Next(tools.Count)];
+            truth.ToolId = constraints?.ToolId != null && tools.Contains(constraints.ToolId)
+                ? constraints.ToolId
+                : tools[random.Next(tools.Count)];
             truth.MotiveId = CaseCatalog.Motives[random.Next(CaseCatalog.Motives.Length)].Id;
-            truth.RelationshipId = CaseCatalog.Relationships[random.Next(CaseCatalog.Relationships.Length - 1)].Id; // REL-07은 동기 설명 관계에서 제외
+            truth.RelationshipId = constraints?.RelationshipId
+                ?? CaseCatalog.Relationships[random.Next(CaseCatalog.Relationships.Length - 1)].Id; // REL-07은 동기 설명 관계에서 제외
 
             truth.Method = CaseCatalog.Name(CaseCatalog.Methods, truth.MethodId);
             truth.Tool = truth.ToolId == "TOOL-00" ? null : CaseCatalog.Name(CaseCatalog.Tools, truth.ToolId);

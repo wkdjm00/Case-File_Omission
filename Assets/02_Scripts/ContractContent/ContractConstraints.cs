@@ -30,6 +30,12 @@ namespace CaseFileOmission.ContractContent
         /// <summary>범행 도구(04 도구 카탈로그 ID). 이 도구를 쓸 수 있는 방법 중에서만 고른다.</summary>
         public string ToolId;
 
+        /// <summary>고정해야 하는 범행 방법 ID. null이면 해당 사건 유형의 유효 후보에서 고른다.</summary>
+        public string MethodId;
+
+        /// <summary>고정해야 하는 가해자-피해자 관계 ID. null이면 기존 후보 표에서 고른다.</summary>
+        public string RelationshipId;
+
         /// <summary>가해자 성격.</summary>
         public NpcPersonality? PerpetratorPersonality;
 
@@ -115,6 +121,8 @@ namespace CaseFileOmission.ContractContent
             if (CoupleVictims && (!contract.Truth.VictimsAreCouple || contract.Truth.AdditionalVictimIds.Count == 0)) return false;
             if (VictimOccupation != null && npcs.Get(contract.Truth.VictimId).Occupation != VictimOccupation) return false;
             if (ToolId != null && contract.Truth.ToolId != ToolId) return false;
+            if (MethodId != null && contract.Truth.MethodId != MethodId) return false;
+            if (RelationshipId != null && contract.Truth.RelationshipId != RelationshipId) return false;
             if (PerpetratorPersonality.HasValue && npcs.Get(contract.Truth.PerpetratorId).Personality != PerpetratorPersonality.Value) return false;
             if (EarliestIncidentDate != null
                 && (!DateTime.TryParse(contract.IncidentDate, out var date) || date < DateTime.Parse(EarliestIncidentDate))) return false;
@@ -123,8 +131,16 @@ namespace CaseFileOmission.ContractContent
             return true;
         }
 
-        /// <summary>도구 제약에 맞는 방법 후보. 제약이 없으면 그대로.</summary>
-        public IReadOnlyList<string> FilterMethods(IReadOnlyList<string> methods) =>
-            ToolId == null ? methods : methods.Where(m => CaseCatalog.ToolsFor(m).Contains(ToolId)).ToList();
+        /// <summary>방법 ID·도구 ID를 동시에 만족하는 방법 후보만 남긴다.</summary>
+        public IReadOnlyList<string> FilterMethods(IReadOnlyList<string> methods)
+        {
+            if (methods == null) throw new ArgumentNullException(nameof(methods));
+            IEnumerable<string> filtered = methods;
+            if (MethodId != null)
+                filtered = filtered.Where(m => m == MethodId);
+            if (ToolId != null)
+                filtered = filtered.Where(m => CaseCatalog.ToolsFor(m).Contains(ToolId));
+            return filtered.ToList();
+        }
     }
 }

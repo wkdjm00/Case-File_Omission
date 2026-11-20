@@ -110,9 +110,69 @@ namespace CaseFileOmission.Tests
             s.CompletePrologue();
             if (stage >= MainCaseTruthStage.PowerTruth)
                 foreach (var clue in MainCaseClueNames.SystemicTruthClues) s.MainCase.AcquireClue(clue);
+            if (stage >= MainCaseTruthStage.ExperimentTruth)
+                foreach (var clue in MainCaseClueNames.PowerTruthClues) s.MainCase.AcquireClue(clue);
             while (s.MainCase.TryAdvanceStage()) { }
             Assert.AreEqual(stage, s.MainCase.CurrentStage);
             return s;
+        }
+
+        [Test]
+        public void ExperimentTruthPlans_UseTheExactConfirmedMethodToolRelationshipOccupationDateAndObject()
+        {
+            var s = SessionAtStage(MainCaseTruthStage.ExperimentTruth, 31);
+            var expected = new[]
+            {
+                new ContractConstraints
+                {
+                    PlannedClueName = MainCaseClueNames.ParticipantOperatingRulesNotice,
+                    RequireMurder = true, VictimOccupation = "학생", MethodId = "METHOD-03", ToolId = "TOOL-02",
+                    RelationshipId = "REL-01", EarliestIncidentDate = "1984-10-19", HolderIsVictim = true,
+                    DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Bedroom, "편지")
+                },
+                new ContractConstraints
+                {
+                    PlannedClueName = MainCaseClueNames.StudentInfoAcquisitionMemo,
+                    RequireMurder = true, VictimOccupation = "사무원", MethodId = "METHOD-06", ToolId = "TOOL-05",
+                    RelationshipId = "REL-06", EarliestIncidentDate = "1984-10-01", HolderIsVictim = true,
+                    DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
+                },
+                new ContractConstraints
+                {
+                    PlannedClueName = MainCaseClueNames.SurvivorHandoverRecord,
+                    RequireMurder = true, VictimOccupation = "공무원", MethodId = "METHOD-02", ToolId = "TOOL-01",
+                    RelationshipId = "REL-05", EarliestIncidentDate = "1984-11-20", HolderIsVictim = true,
+                    DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
+                }
+            };
+
+            int counter = 0;
+            var pipeline = new ContractPipeline(ContractGenerationConfig.CreateDefault(), new Random(31));
+            foreach (var plan in expected)
+            {
+                var actual = s.PlanMainCaseConstraints();
+                Assert.IsNotNull(actual);
+                Assert.AreEqual(plan.PlannedClueName, actual.PlannedClueName);
+                Assert.AreEqual(plan.MethodId, actual.MethodId);
+                Assert.AreEqual(plan.ToolId, actual.ToolId);
+                Assert.AreEqual(plan.RelationshipId, actual.RelationshipId);
+                Assert.AreEqual(plan.VictimOccupation, actual.VictimOccupation);
+                Assert.AreEqual(plan.EarliestIncidentDate, actual.EarliestIncidentDate);
+                Assert.AreEqual(plan.DocumentObjectId, actual.DocumentObjectId);
+
+                var generated = pipeline.TryGenerate(() => $"experiment-{++counter}", out _, OrganizationConditionType.None, actual);
+                Assert.IsNotNull(generated, $"{actual.PlannedClueName} 생성 실패");
+                Assert.IsTrue(actual.IsSatisfiedBy(generated.Contract, generated.Npcs), actual.PlannedClueName);
+                Assert.AreEqual(actual.MethodId, generated.Contract.Truth.MethodId);
+                Assert.AreEqual(actual.ToolId, generated.Contract.Truth.ToolId);
+                Assert.AreEqual(actual.RelationshipId, generated.Contract.Truth.RelationshipId);
+                Assert.AreEqual(actual.VictimOccupation, generated.Npcs.Get(generated.Contract.Truth.VictimId).Occupation);
+                Assert.GreaterOrEqual(DateTime.Parse(generated.Contract.IncidentDate), DateTime.Parse(actual.EarliestIncidentDate));
+                Assert.AreEqual(actual.DocumentObjectId, generated.Contract.PlannedClueObjectId);
+
+                s.MainCase.AcquireClue(actual.PlannedClueName);
+            }
+            Assert.IsNull(s.PlanMainCaseConstraints());
         }
 
         [Test]

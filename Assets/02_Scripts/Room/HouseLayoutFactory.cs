@@ -1,10 +1,10 @@
 namespace CaseFileOmission.Rooms
 {
     /// <summary>
-    /// 09 「Unity 임시 3D 공간 그래프·좌표·접근 거리 계약」(2026-11-13)의 TEMP_LAYOUT_V1 공간 그래프.
-    /// 주택 기본 8개 공간과 7개 연결(DOOR_01~07)을 고정한다. 실외·욕실·손님방·지하실은 만들지 않는다.
-    /// 계단은 아홉 번째 방이 아니라 현관 홀 안의 임시 오브젝트다(좌표·크기는 <see cref="TempLayoutV1"/>).
-    /// RoomId는 고정 상수로 다른 시스템이 참조하며, 표시 이름은 임시다.
+    /// 09 최신 확정 공간 구조: 7개 실제 방과 연결용 복도 노드 1개.
+    /// 복도 노드는 경로 계산을 위해 그래프에 남기지만 별도 조사실로 취급하지 않는다.
+    /// 계단은 복도 노드가 아니라 현관 홀 내부에 배치하는 공간 요소다.
+    /// 내부 ID는 저장 데이터·자료 배치 호환성을 위해 유지하고, 표시명만 최신 기준을 따른다.
     /// </summary>
     public static class HouseLayoutFactory
     {
@@ -29,8 +29,8 @@ namespace CaseFileOmission.Rooms
             Reception => "응접실",
             Dining => "식당",
             Kitchen => "주방",
-            PantryUtility => "식료품 저장실·다용도실",
-            CorridorStairs => "복도·계단",
+            PantryUtility => "창고",
+            CorridorStairs => "복도",
             Bedroom => "침실",
             Study => "서재",
             _ => roomId
