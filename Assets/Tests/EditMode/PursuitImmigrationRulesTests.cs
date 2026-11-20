@@ -75,6 +75,21 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void ArrestEnding_UsesAnyLivingPolice_NotOnlyAssignedHandler()
+        {
+            var s = StartContract(_ => true);
+            string handler = s.HandlerPoliceId;
+            string other = PoliceRoster.AllPoliceIds.First(id => id != handler);
+            s.PoliceSuspicion.SetSuspicion(handler, s.PlayerId, 25f);
+            s.PoliceSuspicion.SetSuspicion(other, s.PlayerId, 100f);
+
+            s.CheckEndings();
+
+            Assert.AreEqual(GameEndingType.Arrest, s.Endings.GameOverEnding);
+            Assert.IsTrue(s.IsGameOver);
+        }
+
+        [Test]
         public void PursuitTrigger_IgnoresDeadPolice()
         {
             var service = new PoliceSuspicionService();
