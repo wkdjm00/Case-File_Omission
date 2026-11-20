@@ -100,6 +100,15 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void FixedDataSource_RequiresExplicitRegisteredId()
+        {
+            Assert.IsTrue(OrgSupplementaryReports.IsKnownFixedDataSource("EXPERIMENT_PRESSURE_V1"));
+            Assert.IsTrue(OrgSupplementaryReports.IsKnownFixedDataSource("CONTROL_COLLAR_V1"));
+            Assert.IsFalse(OrgSupplementaryReports.IsKnownFixedDataSource("MISSING_SOURCE_123"));
+            Assert.IsFalse(OrgSupplementaryReports.IsKnownFixedDataSource("ORG_SYS_01"));
+        }
+
+        [Test]
         public void MissingSource_IsNotEligible()
         {
             var service = new OrgSupplementarySupportService(new Random(3));
