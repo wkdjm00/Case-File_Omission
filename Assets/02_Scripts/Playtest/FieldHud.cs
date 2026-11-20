@@ -344,7 +344,8 @@ namespace CaseFileOmission.Playtest
             if (_prompt != null) return;
             _prompt = Ui.Rect(_worldLayer, "InteractionPrompt");
             _prompt.anchorMin = _prompt.anchorMax = new Vector2(0.5f, 0.5f);
-            _prompt.sizeDelta = new Vector2(150, 78);
+            // 잘라 쓰는 띠(원본의 92%×48%)의 가로세로 비율(약 2.9:1)을 그대로 지킨다 — 찌그러지지 않게.
+            _prompt.sizeDelta = new Vector2(224, 78);
             _promptImage = _prompt.gameObject.AddComponent<RawImage>();
             _promptImage.uvRect = new Rect(0.04f, 0.27f, 0.92f, 0.48f); // E 키 + 아이콘 띠 부분만
             _promptImage.raycastTarget = false;
