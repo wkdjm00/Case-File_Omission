@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using CaseFileOmission.ContractContent;
 using CaseFileOmission.Game;
 using CaseFileOmission.MainCase;
 using CaseFileOmission.NPC;
@@ -36,10 +37,15 @@ namespace CaseFileOmission.Playtest
         private string _selectedPerson;
         private string _message = "";
 
-        // TEST_TEMP: 인물 정보 선택지(정식 목록 미정). 정답은 실제 진실의 방법·도구 문자열이다.
-        private static readonly string[] CauseOptions = { "둔기로 가격(임시)", "독극물", "추락", "질식", "해당 없음(생존)" };
-        private static readonly string[] ToolOptions = { "둔기(임시)", "약물", "밧줄", "없음" };
-        private static readonly string[] OccupationOptions = { "미상", "가정부", "사업가", "의사", "교사" };
+        // 04의 고정 선택지 ID/표시명을 사용해 실제 사건 데이터와 같은 값으로 비교한다.
+        private const string NoDeathProfile = "생존 / 사망 원인 없음";
+        private static readonly string[] CauseOptions = CaseCatalog.Methods
+            .Where(m => new[] { "METHOD-01", "METHOD-02", "METHOD-03", "METHOD-05", "METHOD-06", "METHOD-07" }.Contains(m.Id))
+            .Select(m => m.Name)
+            .Concat(new[] { NoDeathProfile })
+            .ToArray();
+        private static readonly string[] ToolOptions = CaseCatalog.Tools.Select(t => t.Name).ToArray();
+        private static readonly string[] OccupationOptions = CaseCatalog.Occupations.ToArray();
 
         public ComputerScreen(PlaytestGame g) => _g = g;
 
@@ -151,7 +157,7 @@ namespace CaseFileOmission.Playtest
             }
         }
 
-        /// <summary>사망 원인·도구를 실제 진실과 맞게 특정하면 그 인물의 ID를 얻는다(09 "올바르게 특정하면 ID 조각을 얻는다").</summary>
+        /// <summary>직업·사망 원인·도구를 실제 사건 데이터와 모두 일치시켜야 인물 ID를 해금한다.</summary>
         private void SetGuess(string personId, string occupation, string cause, string tool)
         {
             _personGuesses.TryGetValue(personId, out var g);
@@ -159,12 +165,37 @@ namespace CaseFileOmission.Playtest
             _personGuesses[personId] = g;
 
             var contract = S.CurrentContract ?? S.LastContract;
-            if (contract != null && S.Npcs.Exists(personId) && g.cause != null && g.tool != null)
+            if (contract != null && S.Npcs.Exists(personId)
+                && !string.IsNullOrEmpty(g.occupation)
+                && !string.IsNullOrEmpty(g.cause)
+                && !string.IsNullOrEmpty(g.tool))
             {
-                bool isDead = personId == contract.Truth.VictimId && contract.PrimaryCrimeType == Contracts.CrimeType.Murder;
-                bool causeOk = isDead ? g.cause == contract.Truth.Method : g.cause == "해당 없음(생존)";
-                bool toolOk = isDead ? g.tool == contract.Truth.Tool : g.tool == "없음";
-                if (causeOk && toolOk && _unlockedPersonCodes.Add(PlaytestTexts.PersonCode(personId)))
+                var npc = S.Npcs.Get(personId);
+                bool occupationOk = string.Equals(g.occupation, npc.Occupation, System.StringComparison.Ordinal);
+                bool isCaseVictim = personId == contract.Truth.VictimId
+                    || contract.Truth.AdditionalVictimIds.Contains(personId);
+                bool hasKnownDeathProfile = isCaseVictim
+                    && contract.PrimaryCrimeType == Contracts.CrimeType.Murder
+                    && !npc.IsAlive;
+
+                bool causeOk;
+                bool toolOk;
+                if (hasKnownDeathProfile)
+                {
+                    var expectedCause = CaseCatalog.Methods.FirstOrDefault(m => m.Id == contract.Truth.MethodId)?.Name;
+                    var expectedTool = CaseCatalog.Tools.FirstOrDefault(t => t.Id == contract.Truth.ToolId)?.Name;
+                    causeOk = expectedCause != null && string.Equals(g.cause, expectedCause, System.StringComparison.Ordinal);
+                    toolOk = expectedTool != null && string.Equals(g.tool, expectedTool, System.StringComparison.Ordinal);
+                }
+                else
+                {
+                    // 이 사건의 실제 진실에 사망 프로필이 정의되지 않은 인물에게 임의의 원인을 정답으로 부여하지 않는다.
+                    causeOk = npc.IsAlive && string.Equals(g.cause, NoDeathProfile, System.StringComparison.Ordinal);
+                    toolOk = npc.IsAlive && string.Equals(g.tool, CaseCatalog.Tools.First(t => t.Id == "TOOL-00").Name, System.StringComparison.Ordinal);
+                }
+
+                if (occupationOk && causeOk && toolOk
+                    && _unlockedPersonCodes.Add(PlaytestTexts.PersonCode(personId)))
                     _message = $"인물 정보를 올바르게 특정했습니다. ID 획득: {PlaytestTexts.PersonCode(personId)}";
             }
             Rebuild();
