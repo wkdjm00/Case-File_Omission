@@ -128,20 +128,23 @@ namespace CaseFileOmission.Tests
                     PlannedClueName = MainCaseClueNames.ParticipantOperatingRulesNotice,
                     RequireMurder = true, VictimOccupation = "학생", MethodId = "METHOD-03", ToolId = "TOOL-02",
                     RelationshipId = "REL-01", EarliestIncidentDate = "1984-10-19", HolderIsVictim = true,
+                    DocumentHolderTag = "실제 실험 참가자·배포 안내문 보유자",
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Bedroom, "편지")
                 },
                 new ContractConstraints
                 {
                     PlannedClueName = MainCaseClueNames.StudentInfoAcquisitionMemo,
                     RequireMurder = true, VictimOccupation = "사무원", MethodId = "METHOD-06", ToolId = "TOOL-05",
-                    RelationshipId = "REL-06", EarliestIncidentDate = "1984-10-01", HolderIsVictim = true,
+                    RelationshipId = "REL-06", EarliestIncidentDate = "1984-10-01",
+                    DocumentHolderTag = "학교 학생 정보 요청·전달 및 후보 선정 서류 접근자",
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
                 },
                 new ContractConstraints
                 {
                     PlannedClueName = MainCaseClueNames.SurvivorHandoverRecord,
                     RequireMurder = true, VictimOccupation = "공무원", MethodId = "METHOD-02", ToolId = "TOOL-01",
-                    RelationshipId = "REL-05", EarliestIncidentDate = "1984-11-20", HolderIsVictim = true,
+                    RelationshipId = "REL-05", EarliestIncidentDate = "1984-11-20",
+                    DocumentHolderTag = "제한 열람 기록·이전 회차 생존자 인계 기록 접근자",
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
                 }
             };
@@ -159,6 +162,8 @@ namespace CaseFileOmission.Tests
                 Assert.AreEqual(plan.VictimOccupation, actual.VictimOccupation);
                 Assert.AreEqual(plan.EarliestIncidentDate, actual.EarliestIncidentDate);
                 Assert.AreEqual(plan.DocumentObjectId, actual.DocumentObjectId);
+                Assert.AreEqual(plan.HolderIsVictim, actual.HolderIsVictim);
+                Assert.AreEqual(plan.DocumentHolderTag, actual.DocumentHolderTag);
 
                 var generated = pipeline.TryGenerate(() => $"experiment-{++counter}", out _, OrganizationConditionType.None, actual);
                 Assert.IsNotNull(generated, $"{actual.PlannedClueName} 생성 실패");
@@ -169,6 +174,11 @@ namespace CaseFileOmission.Tests
                 Assert.AreEqual(actual.VictimOccupation, generated.Npcs.Get(generated.Contract.Truth.VictimId).Occupation);
                 Assert.GreaterOrEqual(DateTime.Parse(generated.Contract.IncidentDate), DateTime.Parse(actual.EarliestIncidentDate));
                 Assert.AreEqual(actual.DocumentObjectId, generated.Contract.PlannedClueObjectId);
+                Assert.AreEqual(actual.DocumentHolderTag, generated.Contract.DocumentHolderTag);
+                if (actual.HolderIsVictim)
+                    Assert.AreEqual(generated.Contract.Truth.VictimId, generated.Contract.DocumentHolderNpcId);
+                else
+                    Assert.IsTrue(generated.Npcs.Exists(generated.Contract.DocumentHolderNpcId));
 
                 s.MainCase.AcquireClue(actual.PlannedClueName);
             }
@@ -209,7 +219,8 @@ namespace CaseFileOmission.Tests
             var offer = s.OfferContract();
             Assert.IsNotNull(offer);
             var c = offer.Contract;
-            Assert.AreEqual(MainCaseClueNames.ExperimentCompositionDealProposal, c.PlannedMainCaseClue);
+            CollectionAssert.Contains(MainCaseClueNames.PowerTruthClues, c.PlannedMainCaseClue,
+                "권력의 진실 자료는 개별 출현 조건이 확정되지 않았으므로 관리 번호 순서로 강제하지 않는다.");
             Assert.IsTrue(s.AcceptContract().Success);
 
             string room = CaseCatalog.ObjectRoom(c.PlannedClueObjectId);
