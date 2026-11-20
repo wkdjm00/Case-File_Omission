@@ -479,6 +479,7 @@ namespace CaseFileOmission.SaveLoad
                     FalsehoodReason = m.FalsehoodReason,
                     IdentifiesPerpetrator = m.IdentifiesPerpetrator,
                     IsDirectPerpetratorEvidence = m.IsDirectPerpetratorEvidence,
+                    IsBody = m.IsBody,
                     ObjectId = m.ObjectId,
                     RequiresClueId = m.RequiresClueId,
                     Title = m.Title,
@@ -601,6 +602,7 @@ namespace CaseFileOmission.SaveLoad
                         IdentifiesPerpetrator = m.IdentifiesPerpetrator,
                         IsDirectPerpetratorEvidence = m.IsDirectPerpetratorEvidence
                             || m.MaterialId.Contains("tool-evidence", StringComparison.Ordinal),
+                        IsBody = m.IsBody,
                         ObjectId = m.ObjectId,
                         RequiresClueId = m.RequiresClueId,
                         Title = m.Title,
