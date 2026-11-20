@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using CaseFileOmission.ContractContent;
 using CaseFileOmission.Contracts;
@@ -207,7 +208,7 @@ namespace CaseFileOmission.Tests
             };
 
             var verified = new HashSet<string>();
-            for (int i = 0; i < MainCaseClueNames.PowerTruthClues.Length; i++)
+            for (int i = 0; i < MainCaseClueNames.PowerTruthClues.Count; i++)
             {
                 var constraints = s.PlanMainCaseConstraints();
                 Assert.IsNotNull(constraints);
