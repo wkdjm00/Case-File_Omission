@@ -2117,7 +2117,22 @@ namespace CaseFileOmission.Game
             if (material == null || material.StatedInfoIds.Count == 0)
                 return;
 
-            if (!presenterIsLying && !wasDistorted && !material.IsFalseOrFabricated)
+            bool presentedFalseInformation = presenterIsLying;
+            switch (material.TruthStatus)
+            {
+                case ClueTruthStatus.Factual:
+                    presentedFalseInformation |= wasDistorted;
+                    break;
+                case ClueTruthStatus.False:
+                    presentedFalseInformation |= !wasDistorted;
+                    break;
+                case ClueTruthStatus.Fabricated:
+                    presentedFalseInformation = true;
+                    break;
+                // 부분적 사실은 현재 정보 ID가 참·거짓 부분을 따로 구분하지 않으므로,
+                // 왜곡만으로 전체 정보를 잘못 믿었다고 기록하지 않는다.
+            }
+            if (!presentedFalseInformation)
                 return;
 
             var receiver = Npcs.Get(receiverId);
