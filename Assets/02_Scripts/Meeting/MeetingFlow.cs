@@ -23,6 +23,7 @@ namespace CaseFileOmission.Meeting
         Unsolved
     }
 
+    [Serializable]
     public sealed class ConclusionResult
     {
         public ConclusionOutcome Outcome;
@@ -30,6 +31,35 @@ namespace CaseFileOmission.Meeting
         public int AcceptCount;
         public int RejectCount;
         public int VerificationsUsed;
+    }
+
+    [Serializable]
+    public sealed class MeetingParticipantSnapshot
+    {
+        public string Id;
+        public MeetingParticipantKind Kind;
+    }
+
+    [Serializable]
+    public sealed class MeetingTurnCountSnapshot
+    {
+        public string ParticipantId;
+        public int Count;
+    }
+
+    /// <summary>JsonUtility가 직렬화할 수 있는 활성 회의 차례·손패 상태.</summary>
+    [Serializable]
+    public sealed class MeetingFlowSnapshot
+    {
+        public string PlayerId;
+        public MeetingParticipantSnapshot[] Participants;
+        public int TurnIndex;
+        public MeetingTurnCountSnapshot[] PresentedThisTurn;
+        public string[] PlayerHand;
+        public string[] PlayerReserve;
+        public int ConclusionVerificationsUsed;
+        public bool HasLastConclusion;
+        public ConclusionResult LastConclusion;
     }
 
     /// <summary>
@@ -211,6 +241,106 @@ namespace CaseFileOmission.Meeting
                 VerificationsUsed = ConclusionVerificationsUsed
             };
             return LastConclusion;
+        }
+
+        public MeetingFlowSnapshot CaptureSnapshot()
+        {
+            return new MeetingFlowSnapshot
+            {
+                PlayerId = PlayerId,
+                Participants = _participants.Select(p => new MeetingParticipantSnapshot { Id = p.Id, Kind = p.Kind }).ToArray(),
+                TurnIndex = _turnIndex,
+                PresentedThisTurn = _presentedThisTurn.Select(p => new MeetingTurnCountSnapshot
+                {
+                    ParticipantId = p.Key,
+                    Count = p.Value
+                }).ToArray(),
+                PlayerHand = _playerHand.ToArray(),
+                PlayerReserve = _playerReserve.ToArray(),
+                ConclusionVerificationsUsed = ConclusionVerificationsUsed,
+                HasLastConclusion = LastConclusion != null,
+                LastConclusion = LastConclusion == null ? null : new ConclusionResult
+                {
+                    Outcome = LastConclusion.Outcome,
+                    AccusedId = LastConclusion.AccusedId,
+                    AcceptCount = LastConclusion.AcceptCount,
+                    RejectCount = LastConclusion.RejectCount,
+                    VerificationsUsed = LastConclusion.VerificationsUsed
+                }
+            };
+        }
+
+        public static bool TryRestoreSnapshot(MeetingFlowSnapshot snapshot, string expectedPlayerId, out MeetingFlow restored)
+        {
+            restored = null;
+            if (snapshot == null || string.IsNullOrEmpty(snapshot.PlayerId)
+                || string.IsNullOrEmpty(expectedPlayerId) || snapshot.PlayerId != expectedPlayerId
+                || snapshot.Participants == null || snapshot.Participants.Length == 0
+                || snapshot.TurnIndex < -1 || snapshot.TurnIndex >= snapshot.Participants.Length
+                || snapshot.ConclusionVerificationsUsed < 0
+                || snapshot.ConclusionVerificationsUsed > CardPresentationLimits.MaxAdditionalVerificationsPerCardOrClaim
+                || snapshot.PresentedThisTurn == null || snapshot.PlayerHand == null || snapshot.PlayerReserve == null)
+                return false;
+
+            var participants = new List<(string Id, MeetingParticipantKind Kind)>();
+            var participantIds = new HashSet<string>(StringComparer.Ordinal);
+            int playerCount = 0;
+            foreach (var p in snapshot.Participants)
+            {
+                if (p == null || string.IsNullOrEmpty(p.Id) || !Enum.IsDefined(typeof(MeetingParticipantKind), p.Kind)
+                    || !participantIds.Add(p.Id))
+                    return false;
+                if (p.Kind == MeetingParticipantKind.Player)
+                {
+                    playerCount++;
+                    if (p.Id != expectedPlayerId) return false;
+                }
+                participants.Add((p.Id, p.Kind));
+            }
+            if (playerCount != 1) return false;
+
+            if (snapshot.PresentedThisTurn.Any(p => p == null || string.IsNullOrEmpty(p.ParticipantId)
+                || !participantIds.Contains(p.ParticipantId) || p.Count < 0)
+                || snapshot.PresentedThisTurn.Select(p => p.ParticipantId).Distinct(StringComparer.Ordinal).Count() != snapshot.PresentedThisTurn.Length)
+                return false;
+
+            var hand = snapshot.PlayerHand.Where(id => !string.IsNullOrEmpty(id)).ToList();
+            var reserve = snapshot.PlayerReserve.Where(id => !string.IsNullOrEmpty(id)).ToList();
+            if (hand.Count != snapshot.PlayerHand.Length || hand.Distinct(StringComparer.Ordinal).Count() != hand.Count
+                || reserve.Count != snapshot.PlayerReserve.Length || reserve.Distinct(StringComparer.Ordinal).Count() != reserve.Count
+                || hand.Intersect(reserve, StringComparer.Ordinal).Any())
+                return false;
+
+            if (snapshot.HasLastConclusion && (snapshot.LastConclusion == null
+                || !Enum.IsDefined(typeof(ConclusionOutcome), snapshot.LastConclusion.Outcome)
+                || snapshot.LastConclusion.VerificationsUsed < 0
+                || snapshot.LastConclusion.VerificationsUsed > CardPresentationLimits.MaxAdditionalVerificationsPerCardOrClaim))
+                return false;
+
+            var flow = new MeetingFlow(expectedPlayerId);
+            flow._participants.Clear();
+            flow._participants.AddRange(participants);
+            flow._turnIndex = snapshot.TurnIndex;
+            flow._presentedThisTurn.Clear();
+            foreach (var c in snapshot.PresentedThisTurn)
+                flow._presentedThisTurn[c.ParticipantId] = c.Count;
+            flow._playerHand.Clear();
+            flow._playerHand.AddRange(hand);
+            flow._playerReserve.Clear();
+            flow._playerReserve.AddRange(reserve);
+            flow.ConclusionVerificationsUsed = snapshot.ConclusionVerificationsUsed;
+            flow.LastConclusion = snapshot.HasLastConclusion
+                ? new ConclusionResult
+                {
+                    Outcome = snapshot.LastConclusion.Outcome,
+                    AccusedId = snapshot.LastConclusion.AccusedId,
+                    AcceptCount = snapshot.LastConclusion.AcceptCount,
+                    RejectCount = snapshot.LastConclusion.RejectCount,
+                    VerificationsUsed = snapshot.LastConclusion.VerificationsUsed
+                }
+                : null;
+            restored = flow;
+            return true;
         }
 
         private MeetingParticipantKind KindOf(string id)

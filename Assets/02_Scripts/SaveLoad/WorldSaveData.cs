@@ -149,6 +149,13 @@ namespace CaseFileOmission.SaveLoad
     }
 
     [Serializable]
+    public sealed class MeetingParticipantPresentedDto
+    {
+        public string PresenterId;
+        public string MaterialId;
+    }
+
+    [Serializable]
     public sealed class MeetingSaveData
     {
         public bool HasSession;
@@ -156,6 +163,9 @@ namespace CaseFileOmission.SaveLoad
         public bool IsActive;
         public MeetingCounterDto[] Counters;
         public GameEventDto[] ProcessedActions;
+        public MeetingFlowSnapshot FlowSnapshot;
+        public MeetingCardResolverSnapshot ResolverSnapshot;
+        public MeetingParticipantPresentedDto[] ParticipantPresented;
     }
 
     [Serializable]
@@ -462,7 +472,7 @@ namespace CaseFileOmission.SaveLoad
     [Serializable]
     public sealed class WorldSaveData
     {
-        public const int CurrentVersion = 2;
+        public const int CurrentVersion = 3;
 
         public int Version;
         public EvidenceSaveData Evidence;

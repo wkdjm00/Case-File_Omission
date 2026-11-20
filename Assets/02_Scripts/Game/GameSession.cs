@@ -167,7 +167,8 @@ namespace CaseFileOmission.Game
         public string HandlerPoliceId => CurrentContract?.HandlerPoliceId;
 
         /// <summary>회의 도중에는 저장하지 않는다(회의 중 의문·차례 상태는 저장 대상이 아니다).</summary>
-        public bool CanSave => State.CurrentPhase != GamePhase.Meeting;
+        /// <summary>모든 외부 행동은 동기식으로 완료되어 반환되므로, 조사·회의 상태 경계에서 저장할 수 있다.</summary>
+        public bool CanSave => State.CurrentPhase != GamePhase.Resolved;
 
         public GameSession(GameSessionConfig config)
         {
@@ -1523,7 +1524,7 @@ namespace CaseFileOmission.Game
 
         public SaveGameData CaptureSave()
         {
-            if (!CanSave) throw new InvalidOperationException("회의 중에는 저장할 수 없습니다.");
+            if (!CanSave) throw new InvalidOperationException("처리 중인 상태에서는 저장할 수 없습니다.");
             var data = SaveGameService.Capture(State, Organization, PoliceSuspicion, PoliceLife, MainCase, Endings, PlayerId);
             data.World = WorldStateSaveService.Capture(BuildSaveTargets());
             return data;
@@ -1548,10 +1549,19 @@ namespace CaseFileOmission.Game
 
             session.Rooms = HouseLayoutFactory.CreateStandardHouse();
             session.Occupancy = new RoomOccupancyTracker(session.Rooms);
+
+            // 회의 세션 객체는 세부 월드 상태를 복원하기 전에 만들어야 카운터·처리 이벤트를 복원할 수 있다.
+            if (session.State.CurrentPhase == GamePhase.Meeting
+                && data?.World?.Meeting?.HasSession == true
+                && data.World.Meeting.IsActive
+                && !string.IsNullOrEmpty(data.World.Meeting.ContractId))
+                session.Meeting = new MeetingSession(data.World.Meeting.ContractId, session.Manipulation);
+
             var targets = session.BuildSaveTargets();
             WorldStateSaveService.Restore(data?.World, targets, session.Logger);
 
-            if (session.State.CurrentPhase == GamePhase.Investigation && targets.Contract != null)
+            if ((session.State.CurrentPhase == GamePhase.Investigation || session.State.CurrentPhase == GamePhase.Meeting)
+                && targets.Contract != null)
             {
                 session.CurrentContract = targets.Contract;
                 session.Report = session.Reports.FirstOrDefault(r => r.ContractId == targets.Contract.ContractId)
@@ -1562,6 +1572,30 @@ namespace CaseFileOmission.Game
             else
             {
                 session.Materials.Clear();
+            }
+
+            if (session.State.CurrentPhase == GamePhase.Meeting)
+            {
+                if (session.CurrentContract != null && session.Meeting != null
+                    && session.Meeting.ContractId == session.CurrentContract.ContractId
+                    && targets.MeetingFlow != null && targets.MeetingResolver != null)
+                {
+                    session.MeetingFlow = targets.MeetingFlow;
+                    session.MeetingResolver = targets.MeetingResolver;
+                }
+                else
+                {
+                    session.Logger.LogError("SAVE_MEETING_RESTORE_FAILED", nameof(GameSession), GamePhase.Meeting,
+                        "저장된 회의 상태를 완전히 복원할 수 없어 조사 단계로 되돌립니다.", recoverable: true);
+                    session.Meeting = null;
+                    session.MeetingFlow = null;
+                    session.MeetingResolver = null;
+                    if (session.CurrentContract != null)
+                        session.State.RestoreState(session.CurrentContract.ContractId, GamePhase.Investigation,
+                            session.State.CurrentTimeBlock, session.State.CurrentDay);
+                    else
+                        session.State.ResetToIdle();
+                }
             }
 
             session.BuildNpcSystems(keepTransferLog: true);
@@ -1576,6 +1610,9 @@ namespace CaseFileOmission.Game
         private WorldStateTargets BuildSaveTargets() => new WorldStateTargets
         {
             CarriedOverQuestions = _carriedOverQuestions,
+            MeetingFlow = MeetingFlow,
+            MeetingResolver = MeetingResolver,
+            ParticipantPresented = _participantPresented,
             Clues = Clues,
             Manipulation = Manipulation,
             ManipulationOutcomes = PhysicalManipulation,

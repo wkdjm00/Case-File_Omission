@@ -15,6 +15,7 @@ namespace CaseFileOmission.Meeting
         RejectedVerificationExhausted
     }
 
+    [Serializable]
     public sealed class CardQuestion
     {
         public string QuestionId;
@@ -56,6 +57,22 @@ namespace CaseFileOmission.Meeting
         public readonly List<CardJudgement> Judgements = new List<CardJudgement>();
         public readonly List<SuspicionDeltaOutcome> SuspicionDeltas = new List<SuspicionDeltaOutcome>();
         public readonly List<CardQuestion> OpenedQuestions = new List<CardQuestion>();
+    }
+
+    [Serializable]
+    public sealed class MeetingAcceptedLieCountSnapshot
+    {
+        public string PresenterId;
+        public int Count;
+    }
+
+    [Serializable]
+    public sealed class MeetingCardResolverSnapshot
+    {
+        public CardQuestion[] Questions;
+        public string[] CarriedOverQuestionIds;
+        public MeetingAcceptedLieCountSnapshot[] AcceptedLieCounts;
+        public string[] ProcessedActionIds;
     }
 
     /// <summary>
@@ -296,6 +313,89 @@ namespace CaseFileOmission.Meeting
                 if (r.SuspicionDelta != null) deltas.Add(r.SuspicionDelta);
             }
             return deltas;
+        }
+
+        public MeetingCardResolverSnapshot CaptureSnapshot()
+        {
+            return new MeetingCardResolverSnapshot
+            {
+                Questions = _questions.Values.OrderBy(q => q.QuestionId, StringComparer.Ordinal)
+                    .Select(q => new CardQuestion
+                    {
+                        QuestionId = q.QuestionId,
+                        JudgeId = q.JudgeId,
+                        PresenterId = q.PresenterId,
+                        ClueId = q.ClueId,
+                        PresenterIsLying = q.PresenterIsLying,
+                        State = q.State,
+                        AdditionalVerificationsUsed = q.AdditionalVerificationsUsed,
+                        DeferCount = q.DeferCount
+                    }).ToArray(),
+                CarriedOverQuestionIds = _carriedOverQuestionIds.OrderBy(id => id, StringComparer.Ordinal).ToArray(),
+                AcceptedLieCounts = _acceptedLieCount.OrderBy(p => p.Key, StringComparer.Ordinal)
+                    .Select(p => new MeetingAcceptedLieCountSnapshot { PresenterId = p.Key, Count = p.Value }).ToArray(),
+                ProcessedActionIds = _eventLog.GetOrdered().Select(e => e.EventId).Distinct(StringComparer.Ordinal).ToArray()
+            };
+        }
+
+        public static bool TryRestoreSnapshot(
+            MeetingSession session,
+            string playerId,
+            MeetingCardResolverSnapshot snapshot,
+            out MeetingCardResolver restored)
+        {
+            restored = null;
+            if (session == null || string.IsNullOrEmpty(playerId) || snapshot == null
+                || snapshot.Questions == null || snapshot.CarriedOverQuestionIds == null
+                || snapshot.AcceptedLieCounts == null || snapshot.ProcessedActionIds == null)
+                return false;
+
+            var resolver = new MeetingCardResolver(session, playerId);
+            foreach (var q in snapshot.Questions)
+            {
+                if (q == null || string.IsNullOrEmpty(q.QuestionId) || string.IsNullOrEmpty(q.JudgeId)
+                    || string.IsNullOrEmpty(q.PresenterId) || string.IsNullOrEmpty(q.ClueId)
+                    || !Enum.IsDefined(typeof(CardQuestionState), q.State)
+                    || q.AdditionalVerificationsUsed < 0 || q.AdditionalVerificationsUsed > MaxAdditionalVerifications
+                    || q.DeferCount < 0 || resolver._questions.ContainsKey(q.QuestionId))
+                    return false;
+                resolver._questions.Add(q.QuestionId, new CardQuestion
+                {
+                    QuestionId = q.QuestionId,
+                    JudgeId = q.JudgeId,
+                    PresenterId = q.PresenterId,
+                    ClueId = q.ClueId,
+                    PresenterIsLying = q.PresenterIsLying,
+                    State = q.State,
+                    AdditionalVerificationsUsed = q.AdditionalVerificationsUsed,
+                    DeferCount = q.DeferCount
+                });
+            }
+
+            foreach (var id in snapshot.CarriedOverQuestionIds)
+            {
+                if (string.IsNullOrEmpty(id) || !resolver._questions.ContainsKey(id))
+                    return false;
+                resolver._carriedOverQuestionIds.Add(id);
+            }
+
+            foreach (var c in snapshot.AcceptedLieCounts)
+            {
+                if (c == null || string.IsNullOrEmpty(c.PresenterId) || c.Count < 0
+                    || resolver._acceptedLieCount.ContainsKey(c.PresenterId))
+                    return false;
+                resolver._acceptedLieCount.Add(c.PresenterId, c.Count);
+            }
+
+            foreach (var id in snapshot.ProcessedActionIds)
+            {
+                if (string.IsNullOrEmpty(id)) return false;
+                if (!resolver._eventLog.TryRecord(new GameEvent(id, GameEventType.Custom, session.ContractId, "restored-meeting-action")))
+                    continue;
+            }
+
+            restored = resolver;
+            return true;
         }
 
         private QuestionActionResult AcceptAfterVerification(string actionEventId, CardQuestion question)

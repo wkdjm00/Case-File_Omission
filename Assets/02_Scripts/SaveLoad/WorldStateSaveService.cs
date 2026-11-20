@@ -32,6 +32,9 @@ namespace CaseFileOmission.SaveLoad
         public NpcInfoTransferService InfoTransfer;
 
         public MeetingSession Meeting;
+        public MeetingFlow MeetingFlow;
+        public MeetingCardResolver MeetingResolver;
+        public HashSet<(string Presenter, string Material)> ParticipantPresented;
 
         /// <summary>회의를 결론 없이 마칠 때 다음 회의로 넘긴 의문(06 저장 계약 "보류 의문/검증 횟수"). 복원 시 이 목록에 채운다.</summary>
         public List<CardQuestion> CarriedOverQuestions;
@@ -170,7 +173,7 @@ namespace CaseFileOmission.SaveLoad
                 Version = WorldSaveData.CurrentVersion,
                 Evidence = CaptureEvidence(t),
                 Npc = CaptureNpc(t),
-                Meeting = CaptureMeeting(t.Meeting),
+                Meeting = CaptureMeeting(t),
                 Reports = t.Reports?.Select(CaptureReport).ToArray() ?? Array.Empty<ContractReportSaveData>(),
                 CaseBoards = t.CaseBoards?.Select(CaptureCaseBoard).ToArray() ?? Array.Empty<CaseBoardSaveData>(),
                 CarriedOverQuestions = t.CarriedOverQuestions?.Where(q => q != null && !q.IsClosed).Select(q => new CardQuestionDto
@@ -211,7 +214,7 @@ namespace CaseFileOmission.SaveLoad
             // 단서 정의가 먼저 있어야 NPC·회의·보고서의 단서 참조를 검증할 수 있다.
             RestoreEvidence(data.Evidence, t, logger);
             RestoreNpc(data.Npc, t, logger);
-            RestoreMeeting(data.Meeting, t.Meeting, logger);
+            RestoreMeeting(data.Meeting, t, logger);
             RestoreReports(data.Reports, t, logger);
             RestoreCaseBoards(data.CaseBoards, t, logger);
             RestoreCarriedOverQuestions(data.CarriedOverQuestions, t, logger);
@@ -957,10 +960,17 @@ namespace CaseFileOmission.SaveLoad
 
         // ───────────────────────── Meeting ─────────────────────────
 
-        private static MeetingSaveData CaptureMeeting(MeetingSession session)
+        private static MeetingSaveData CaptureMeeting(WorldStateTargets targets)
         {
+            var session = targets?.Meeting;
             if (session == null)
-                return new MeetingSaveData { HasSession = false, Counters = Array.Empty<MeetingCounterDto>(), ProcessedActions = Array.Empty<GameEventDto>() };
+                return new MeetingSaveData
+                {
+                    HasSession = false,
+                    Counters = Array.Empty<MeetingCounterDto>(),
+                    ProcessedActions = Array.Empty<GameEventDto>(),
+                    ParticipantPresented = Array.Empty<MeetingParticipantPresentedDto>()
+                };
 
             return new MeetingSaveData
             {
@@ -974,15 +984,23 @@ namespace CaseFileOmission.SaveLoad
                     SuspectId = c.SuspectId,
                     Count = c.Count
                 }).ToArray(),
-                ProcessedActions = session.ProcessedActions.Select(ToDto).ToArray()
+                ProcessedActions = session.ProcessedActions.Select(ToDto).ToArray(),
+                FlowSnapshot = targets.MeetingFlow?.CaptureSnapshot(),
+                ResolverSnapshot = targets.MeetingResolver?.CaptureSnapshot(),
+                ParticipantPresented = targets.ParticipantPresented?
+                    .OrderBy(p => p.Presenter, StringComparer.Ordinal)
+                    .ThenBy(p => p.Material, StringComparer.Ordinal)
+                    .Select(p => new MeetingParticipantPresentedDto { PresenterId = p.Presenter, MaterialId = p.Material })
+                    .ToArray() ?? Array.Empty<MeetingParticipantPresentedDto>()
             };
         }
 
-        private static void RestoreMeeting(MeetingSaveData data, MeetingSession session, GameLogger logger)
+        private static void RestoreMeeting(MeetingSaveData data, WorldStateTargets targets, GameLogger logger)
         {
             if (data == null || !data.HasSession)
                 return;
 
+            var session = targets?.Meeting;
             if (session == null)
             {
                 Log(logger, "SAVE_MEETING_TARGET_MISSING", "저장된 회의 세션을 받을 대상이 없어 건너뜁니다.", contractId: data.ContractId);
@@ -1017,6 +1035,37 @@ namespace CaseFileOmission.SaveLoad
 
             if (!data.IsActive && session.IsActive)
                 session.EndSession();
+
+            if (data.IsActive)
+            {
+                if (!MeetingFlow.TryRestoreSnapshot(data.FlowSnapshot, targets.MeetingFlow?.PlayerId ?? data.FlowSnapshot?.PlayerId, out var flow))
+                {
+                    Log(logger, "SAVE_MEETING_FLOW_INVALID", "회의 차례·손패 상태를 복원할 수 없습니다.", contractId: data.ContractId);
+                }
+                else
+                    targets.MeetingFlow = flow;
+
+                string playerId = targets.MeetingFlow?.PlayerId ?? data.FlowSnapshot?.PlayerId;
+                if (targets.MeetingFlow != null
+                    && MeetingCardResolver.TryRestoreSnapshot(session, playerId, data.ResolverSnapshot, out var resolver))
+                    targets.MeetingResolver = resolver;
+                else
+                    Log(logger, "SAVE_MEETING_RESOLVER_INVALID", "회의 의문·검증 상태를 복원할 수 없습니다.", contractId: data.ContractId);
+
+                if (targets.ParticipantPresented != null)
+                {
+                    targets.ParticipantPresented.Clear();
+                    foreach (var presented in data.ParticipantPresented ?? Array.Empty<MeetingParticipantPresentedDto>())
+                    {
+                        if (presented == null || string.IsNullOrEmpty(presented.PresenterId) || string.IsNullOrEmpty(presented.MaterialId))
+                        {
+                            Log(logger, "SAVE_INVALID_MEETING_CARD", "잘못된 참가자 카드 사용 기록을 건너뜁니다.", contractId: data.ContractId);
+                            continue;
+                        }
+                        targets.ParticipantPresented.Add((presented.PresenterId, presented.MaterialId));
+                    }
+                }
+            }
         }
 
         // ───────────────────────── Case boards ─────────────────────────
