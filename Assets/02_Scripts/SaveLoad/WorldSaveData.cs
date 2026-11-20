@@ -356,6 +356,7 @@ namespace CaseFileOmission.SaveLoad
         public string RelationshipId;
         public string RepresentativeSubtypeId;
         public string ActualSubtypeId;
+        public MissingPersonCircumstance MissingPersonCircumstance;
         public bool VictimDeparted;
         public bool BodyHidden;
         public bool DelayedDeath;
