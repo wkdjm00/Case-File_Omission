@@ -66,12 +66,13 @@ namespace CaseFileOmission.Tests
             };
         }
 
-        private static ClueDefinition Clue(string id, bool identifies = false) => new ClueDefinition(id, ContractId)
+        private static ClueDefinition Clue(string id, bool identifies = false, bool directEvidence = false) => new ClueDefinition(id, ContractId)
         {
             Format = ClueFormat.Document,
             TruthStatus = ClueTruthStatus.PartiallyFactual,
             DisplayName = id + "-name",
-            IdentifiesPerpetrator = identifies
+            IdentifiesPerpetrator = identifies,
+            IsDirectPerpetratorEvidence = directEvidence
         };
 
         /// <summary>저장 → JSON 문자열 → 불러오기까지 실제 경로를 그대로 거친다.</summary>
@@ -89,7 +90,7 @@ namespace CaseFileOmission.Tests
         public void Evidence_RoundTrip_PreservesGraphOwnershipAndManipulation()
         {
             var source = new World();
-            source.Clues.Discover(Clue("a", identifies: true));
+            source.Clues.Discover(Clue("a", identifies: true, directEvidence: true));
             source.Clues.Discover(Clue("b"));
             source.Clues.Discover(Clue("c"));
             source.Clues.Drop("b");
@@ -105,6 +106,7 @@ namespace CaseFileOmission.Tests
             Assert.AreEqual(ClueTruthStatus.PartiallyFactual, defA.TruthStatus);
             Assert.AreEqual("a-name", defA.DisplayName);
             Assert.IsTrue(defA.IdentifiesPerpetrator);
+            Assert.IsTrue(defA.IsDirectPerpetratorEvidence);
             Assert.AreEqual(source.Clues.GetRecord("a").DiscoveredAtUtc, target.Clues.GetRecord("a").DiscoveredAtUtc);
             Assert.AreEqual(ClueWorldState.DroppedInWorld, target.Clues.GetRecord("b").WorldState);
             CollectionAssert.Contains(target.Clues.GetRecord("a").ConfirmedByPoliceIds, "police-a");

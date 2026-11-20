@@ -578,7 +578,8 @@ namespace CaseFileOmission.SaveLoad
                         SubjectNpcId = m.SubjectNpcId,
                         FalsehoodReason = m.FalsehoodReason,
                         IdentifiesPerpetrator = m.IdentifiesPerpetrator,
-                        IsDirectPerpetratorEvidence = m.IsDirectPerpetratorEvidence,
+                        IsDirectPerpetratorEvidence = m.IsDirectPerpetratorEvidence
+                            || m.MaterialId.Contains("tool-evidence", StringComparison.Ordinal),
                         ObjectId = m.ObjectId,
                         RequiresClueId = m.RequiresClueId,
                         Title = m.Title,
@@ -716,6 +717,7 @@ namespace CaseFileOmission.SaveLoad
                         AcquisitionCondition = d.AcquisitionCondition,
                         IdentifiesPerpetrator = d.IdentifiesPerpetrator,
                         IsDirectPerpetratorEvidence = d.IsDirectPerpetratorEvidence
+                            || d.ClueId.Contains("tool-evidence", StringComparison.Ordinal)
                     };
 
                     ClueRecord record;

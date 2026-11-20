@@ -14,8 +14,8 @@ namespace CaseFileOmission.SaveLoad
     {
         public const int AutoSlot = 0;
         public const int ManualSlotCount = 3;
-        public const int CurrentSchemaVersion = 2;
-        public const string CurrentContentVersion = "case-file-omission-2026-11-20";
+        public const int CurrentSchemaVersion = 3;
+        public const string CurrentContentVersion = "case-file-omission-2026-11-20-r2";
 
         private readonly string _directory;
 
