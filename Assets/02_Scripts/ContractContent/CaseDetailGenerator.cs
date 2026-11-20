@@ -151,7 +151,10 @@ namespace CaseFileOmission.ContractContent
                 {
                     m.ObjectId = PickObject(m.RoomId, document: false);
                     m.Title = $"{CaseCatalog.ObjectName(m.ObjectId)} 주변의 흔적";
-                    m.Content = $"{CaseCatalog.ObjectName(m.ObjectId)} 주변에 {SceneNote(c.PrimaryCrimeType)} {time}경 이 방({Room(m.RoomId)})에서 일이 벌어진 것으로 보인다.";
+                    m.Content = $"{CaseCatalog.ObjectName(m.ObjectId)} 주변에 {SceneNote(c.PrimaryCrimeType)} {time}경 이 방({Room(m.RoomId)})에서 일이 벌어진 것으로 보인다."
+                                + (c.Truth.ActualSubtypeId == "ACT-SUB-ASS-02"
+                                    ? " 한 번의 충돌 흔적이 아니라 같은 위치와 주변에 반복된 공격 흔적이 남아 있어, 여러 차례 공격으로 상해가 누적됐을 가능성이 있다."
+                                    : "");
                 }
                 else if (m.MaterialId.Contains("witness-testimony"))
                 {
