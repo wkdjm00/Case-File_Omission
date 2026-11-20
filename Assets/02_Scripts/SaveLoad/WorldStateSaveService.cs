@@ -288,6 +288,7 @@ namespace CaseFileOmission.SaveLoad
                 RelationshipId = c.Truth.RelationshipId,
                 RepresentativeSubtypeId = c.Truth.RepresentativeSubtypeId,
                 ActualSubtypeId = c.Truth.ActualSubtypeId,
+                MissingPersonCircumstance = c.Truth.MissingPersonCircumstance,
                 VictimDeparted = c.Truth.VictimDeparted,
                 BodyHidden = c.Truth.BodyHidden,
                 DelayedDeath = c.Truth.DelayedDeath,
@@ -326,7 +327,8 @@ namespace CaseFileOmission.SaveLoad
             }
 
             if (!IsDefined(d.PrimaryCrimeType) || !IsDefined(d.LocationCategory) || !IsDefined(d.Location)
-                || !IsDefined(d.StartTimeBlock) || !IsDefined(d.CoverUp) || !IsDefined(d.Outcome) || !IsDefined(d.ConditionType))
+                || !IsDefined(d.StartTimeBlock) || !IsDefined(d.CoverUp) || !IsDefined(d.Outcome) || !IsDefined(d.ConditionType)
+                || !IsDefined(d.MissingPersonCircumstance))
             {
                 Log(logger, "SAVE_INVALID_ENUM", "의뢰의 유형·장소·결과 값이 올바르지 않아 의뢰를 복원하지 않습니다.", contractId: d.ContractId);
                 return;
@@ -382,6 +384,7 @@ namespace CaseFileOmission.SaveLoad
             c.Truth.RelationshipId = d.RelationshipId;
             c.Truth.RepresentativeSubtypeId = d.RepresentativeSubtypeId;
             c.Truth.ActualSubtypeId = d.ActualSubtypeId;
+            c.Truth.MissingPersonCircumstance = d.MissingPersonCircumstance;
             c.Truth.VictimDeparted = d.VictimDeparted;
             c.Truth.BodyHidden = d.BodyHidden;
             c.Truth.DelayedDeath = d.DelayedDeath;
