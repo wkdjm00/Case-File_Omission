@@ -767,6 +767,8 @@ namespace CaseFileOmission.Playtest
                 model.transform.localScale *= scale;
                 bounds = RenderBounds(model);
                 model.transform.position += new Vector3(holder.position.x - bounds.center.x, holder.position.y - bounds.min.y, holder.position.z - bounds.center.z);
+                // 시신마다 누운 방향을 다르게(인물 ID로 고정 — 다시 그려도 같은 방향).
+                model.transform.RotateAround(holder.position, Vector3.up, GameSession.StableSeed("corpse-yaw:" + id) % 360);
             }
             else if (prefab != null)
             {
