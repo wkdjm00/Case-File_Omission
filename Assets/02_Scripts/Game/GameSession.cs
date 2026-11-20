@@ -1336,7 +1336,8 @@ namespace CaseFileOmission.Game
                     && (m.SubjectNpcId == target.id || (m.IdentifiesPerpetrator && CurrentContract.Truth.PerpetratorId == target.id))
                     && !_participantPresented.Contains((actor, m.MaterialId))
                     && (isPolice
-                        ? Clues.Exists(m.MaterialId) && Clues.GetRecord(m.MaterialId).ConfirmedByPoliceIds.Contains(actor)
+                        ? (Capacity.GetHeldClues(actor).Contains(m.MaterialId)
+                           || (Clues.Exists(m.MaterialId) && Clues.GetRecord(m.MaterialId).ConfirmedByPoliceIds.Contains(actor)))
                         : Npcs.Exists(actor) && m.StatedInfoIds.Any(Npcs.Get(actor).Knows)))
                 .OrderBy(m => m.MaterialId, StringComparer.Ordinal).FirstOrDefault();
             if (known == null) return false;
@@ -2562,7 +2563,17 @@ namespace CaseFileOmission.Game
             foreach (var npc in Npcs.GetByContract(CurrentContract.ContractId).Where(n => n.IsAlive && Occupancy.HasPosition(n.NpcId)))
                 judges.Add(new NpcCardJudge(npc, Relationships, lie, contradictions));
             if (HandlerPoliceId != null && PoliceLife.IsAlive(HandlerPoliceId))
-                judges.Add(new PoliceCardJudge(HandlerPoliceId, PoliceSuspicion, PoliceLife, Clues, Capacity, lie, contradictions));
+            {
+                string handler = HandlerPoliceId;
+                bool PoliceKnowsFactFromHeldMaterial(string infoId) =>
+                    Materials.Any(m => m.ContractId == CurrentContract.ContractId
+                        && m.StatedInfoIds.Contains(infoId)
+                        && (Capacity.GetHeldClues(handler).Contains(m.MaterialId)
+                            || (Clues.Exists(m.MaterialId) && Clues.GetRecord(m.MaterialId).ConfirmedByPoliceIds.Contains(handler))));
+                judges.Add(new PoliceCardJudge(
+                    handler, PoliceSuspicion, PoliceLife, Clues, Capacity, lie, contradictions,
+                    policy: null, additionalKnowledge: PoliceKnowsFactFromHeldMaterial));
+            }
             return judges;
         }
 
