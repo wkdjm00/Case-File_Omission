@@ -277,14 +277,15 @@ namespace CaseFileOmission.Tests
         [Test]
         public void MurderSubtype03_PlacesBodyAwayFromDeathRoom()
         {
+            // 프롤로그 뒤 의뢰는 메인 단서 제약(피해자 여러 명 등)이 붙어 MUR-03이 나올 수 없으므로, 제약 없는 일반 생성으로 본다.
             for (int seed = 1; seed <= 120; seed++)
             {
-                var s = Start(seed);
-                var c = s.CurrentContract;
+                var built = new ContractPipeline(Contracts.ContractGenerationConfig.CreateDefault(), new Random(seed)).Generate(() => $"c{seed}");
+                var c = built.Contract;
                 if (c.Truth.ActualSubtypeId != "ACT-SUB-MUR-03") continue;
-                var body = s.Materials.First(m => m.MaterialId == ContractPipeline.BodyMaterialId(c.ContractId));
+                var body = built.Materials.First(m => m.MaterialId == ContractPipeline.BodyMaterialId(c.ContractId));
                 Assert.AreNotEqual(body.AboutRoomId, body.RoomId, "사망 장소와 시신 발견 장소가 다르다");
-                Assert.AreEqual(body.RoomId, s.Occupancy.GetRoom(c.Truth.VictimId));
+                Assert.AreEqual(body.RoomId, built.Occupancy.GetRoom(c.Truth.VictimId));
                 return;
             }
             Assert.Inconclusive("120개 시드 안에 MUR-03이 없었다");
