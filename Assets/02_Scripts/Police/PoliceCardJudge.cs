@@ -22,6 +22,7 @@ namespace CaseFileOmission.Police
         private readonly LieDetectionService _lieDetection;
         private readonly CardContradictionIndex _contradictions;
         private readonly ICardQuestionPolicy _policy;
+        private readonly Func<string, bool> _additionalKnowledge;
 
         public PoliceCardJudge(
             string policeId,
@@ -31,7 +32,8 @@ namespace CaseFileOmission.Police
             EvidenceCapacityManager capacity,
             LieDetectionService lieDetection,
             CardContradictionIndex contradictions,
-            ICardQuestionPolicy policy = null)
+            ICardQuestionPolicy policy = null,
+            Func<string, bool> additionalKnowledge = null)
         {
             if (!PoliceRoster.AllPoliceIds.Contains(policeId))
                 throw new ArgumentException($"알 수 없는 경찰 ID '{policeId}'입니다.", nameof(policeId));
@@ -44,6 +46,7 @@ namespace CaseFileOmission.Police
             _lieDetection = lieDetection ?? throw new ArgumentNullException(nameof(lieDetection));
             _contradictions = contradictions ?? new CardContradictionIndex();
             _policy = policy;
+            _additionalKnowledge = additionalKnowledge;
         }
 
         public string JudgeId => _policeId;
@@ -59,7 +62,10 @@ namespace CaseFileOmission.Police
             if (_clues.Exists(infoId) && _clues.GetRecord(infoId).ConfirmedByPoliceIds.Contains(_policeId))
                 return true;
 
-            return _capacity != null && _capacity.GetHeldClues(_policeId).Contains(infoId);
+            if (_capacity != null && _capacity.GetHeldClues(_policeId).Contains(infoId))
+                return true;
+
+            return _additionalKnowledge?.Invoke(infoId) == true;
         }
 
         public CardJudgement Judge(CardJudgementInput input)
