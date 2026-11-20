@@ -1342,7 +1342,10 @@ namespace CaseFileOmission.Game
                 Opinions.ApplySimultaneous(judge, PersonalityOf(judge), inputs);
             }
             LastParticipantPlays.Add(play);
-            State.EventLog.TryRecord(new GameEvent(NextEventId("participant-card"), GameEventType.Custom, CurrentContract.ContractId, $"{actor}:{known.MaterialId}"));
+            string cardEventId = NextEventId("participant-card");
+            State.EventLog.TryRecord(new GameEvent(cardEventId, GameEventType.Custom, CurrentContract.ContractId, $"{actor}:{known.MaterialId}"));
+            foreach (var judgeId in play.AcceptedBy)
+                RecordAcceptedFalseInformation(cardEventId, actor, known.MaterialId, presenterIsLying: false, wasDistorted: false, receiverId: judgeId);
             return true;
         }
 
@@ -1488,7 +1491,13 @@ namespace CaseFileOmission.Game
                              || (manipulation == CardManipulation.None && Campaign.PhysicallyDistortedClueIds.Contains(clueId));
             var inputs = OpinionInputsFor(shown, distorted).ToList();
             foreach (var judgement in LastCardResolution.Judgements.Where(j => j.Participated && j.Accepts))
+            {
                 Opinions.ApplySimultaneous(judgement.JudgeId, PersonalityOf(judgement.JudgeId), inputs);
+                RecordAcceptedFalseInformation(
+                    eventId, PlayerId, shown, lying,
+                    manipulation == CardManipulation.Distort || Campaign.PhysicallyDistortedClueIds.Contains(shown),
+                    judgement.JudgeId);
+            }
             RevealWitnessIfVerified(shown, lying, manipulation);
 
             return AfterMeetingAction();
@@ -2088,6 +2097,49 @@ namespace CaseFileOmission.Game
             return GameActionResult.Ok();
         }
 
+        /// <summary>
+        /// 거짓·조작 정보가 NPC에게 수용되었을 때만 그 잘못된 믿음과 출처를 기록한다.
+        /// 실제 사건의 진실과 의심도는 여기서 변경하지 않는다(06·07 확정 규칙).
+        /// </summary>
+        private void RecordAcceptedFalseInformation(
+            string actionEventId,
+            string presenterId,
+            string clueId,
+            bool presenterIsLying,
+            bool wasDistorted,
+            string receiverId)
+        {
+            if (CurrentContract == null || string.IsNullOrEmpty(actionEventId)
+                || string.IsNullOrEmpty(receiverId) || !Npcs.Exists(receiverId) || !Npcs.Get(receiverId).IsAlive)
+                return;
+
+            var material = Materials.FirstOrDefault(m => m.MaterialId == clueId && m.ContractId == CurrentContract.ContractId);
+            if (material == null || material.StatedInfoIds.Count == 0)
+                return;
+
+            if (!presenterIsLying && !wasDistorted && !material.IsFalseOrFabricated)
+                return;
+
+            var receiver = Npcs.Get(receiverId);
+            foreach (var infoId in material.StatedInfoIds.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct(StringComparer.Ordinal))
+            {
+                string beliefEventId = $"npc-false-belief:{actionEventId}:{receiverId}:{infoId}";
+                if (!State.EventLog.TryRecord(new GameEvent(beliefEventId, GameEventType.Custom, CurrentContract.ContractId,
+                        $"presenter={presenterId};clue={clueId};info={infoId}")))
+                    continue;
+
+                receiver.LearnInfo(infoId, NpcJudgement.Believe, new NpcInfoRecord
+                {
+                    State = NpcInformationState.BelievesFalse,
+                    Method = NpcInfoAcquisitionMethod.Dialogue,
+                    Minute = Campaign.NpcMinute,
+                    SourceEventId = beliefEventId,
+                    SourceEvidenceId = clueId,
+                    SourcePersonId = presenterId
+                });
+            }
+        }
+
         private GameActionResult ApplyQuestionAction(QuestionActionResult action)
         {
             var guard = GuardMeeting();
@@ -2096,6 +2148,11 @@ namespace CaseFileOmission.Game
                 return GameActionResult.Fail(GameActionFailure.InvalidInput);
             if (action.SuspicionDelta != null)
                 ApplySuspicionDelta(action.SuspicionDelta);
+            if (action.State == CardQuestionState.AcceptedAfterVerification)
+                RecordAcceptedFalseInformation(
+                    action.ActionEventId, action.PresenterId, action.ClueId, action.PresenterIsLying,
+                    action.PresenterUsedDistortion || Campaign.PhysicallyDistortedClueIds.Contains(action.ClueId),
+                    action.JudgeId);
             return AfterMeetingAction();
         }
 
