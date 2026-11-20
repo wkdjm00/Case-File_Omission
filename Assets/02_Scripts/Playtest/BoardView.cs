@@ -103,6 +103,9 @@ namespace CaseFileOmission.Playtest
         public List<PropPlacement> Props = new List<PropPlacement>();
 
         private readonly Dictionary<string, PieceView> _pieces = new Dictionary<string, PieceView>();
+        /// <summary>피해자로 공개된 인물에게 한 번 고른 몸체. 다른 인물의 역할 공개로 몸체가 바뀌지 않게 의뢰 동안 유지한다.</summary>
+        private readonly Dictionary<string, string> _victimBodies = new Dictionary<string, string>();
+        private string _victimBodiesContractId;
         private readonly Dictionary<string, Renderer> _floors = new Dictionary<string, Renderer>();
         private readonly Dictionary<string, Transform> _interactionPoints = new Dictionary<string, Transform>();
         private readonly Dictionary<string, Color> _floorColors = new Dictionary<string, Color>();
@@ -319,12 +322,13 @@ namespace CaseFileOmission.Playtest
                 if (s.PlayerRoom != null)
                     wanted[s.PlayerId] = (s.PlayerRoom, "player", "나", TempLayoutV1.PlayerMoveAnimationSpeed, false, null);
 
+                var bodies = BodyKeys(s, s.Npcs.GetByContract(s.CurrentContract.ContractId).Where(n => s.Occupancy.HasPosition(n.NpcId)).ToList());
                 foreach (var npc in s.Npcs.GetByContract(s.CurrentContract.ContractId))
                 {
                     if (!s.Occupancy.HasPosition(npc.NpcId)) continue;
-                    // 시신은 전용 모델(VictimPrefab)로 보인다. 모델이 없을 때만 피해자 몸체를 눕혀 대신한다.
+                    // 시신은 전용 모델(VictimPrefab)로 보인다. 모델이 없을 때만 서 있던 몸체를 눕혀 대신한다.
                     bool corpseModel = !npc.IsAlive && VictimPrefab != null;
-                    wanted[npc.NpcId] = (s.Occupancy.GetRoom(npc.NpcId), corpseModel ? "victim" : BodyKey(s, npc),
+                    wanted[npc.NpcId] = (s.Occupancy.GetRoom(npc.NpcId), corpseModel ? "victim" : bodies[npc.NpcId],
                         $"{PlaytestTexts.TempName(s, npc.NpcId)}\n{PlaytestTexts.PublicRole(s, npc)}", TempLayoutV1.NpcMoveAnimationSpeed,
                         !npc.IsAlive && !corpseModel, corpseModel ? null : PlaytestTexts.FaceObject(npc.Personality));
                 }
@@ -676,7 +680,7 @@ namespace CaseFileOmission.Playtest
         }
 
         /// <summary>
-        /// 공개 역할 기준 몸체(08: 사건 관련 인물 2종·목격자·피해자·가해자). 실제 가해자라도 공식 지목 전에는 가해자 몸체를 쓰지 않는다.
+        /// 공개 역할 기준 몸체(08: 사건 관련 인물 2종·목격자·가해자). 피해자 몸체는 BodyKeys가 고른다. 실제 가해자라도 공식 지목 전에는 가해자 몸체를 쓰지 않는다.
         /// </summary>
         private static string BodyKey(GameSession s, NpcState npc)
         {
@@ -686,9 +690,48 @@ namespace CaseFileOmission.Playtest
             {
                 PublicRole.Perpetrator => "criminal",
                 PublicRole.Witness => "npc2",
-                PublicRole.Victim => "npc3",
                 _ => GameSession.StableSeed("body:" + npc.NpcId) % 2 == 0 ? "npc0" : "npc1"
             };
+        }
+
+        /// <summary>한 몸체를 함께 쓸 수 있는 최대 인원(사용자 지정 2026-11-20 — 얼굴 오브젝트로 구분하므로 몸체는 겹쳐도 된다).</summary>
+        private const int MaxSameBody = 2;
+
+        /// <summary>
+        /// 서 있는 인물들의 몸체. 피해자로 공개된 살아 있는 인물은 고정 몸체 대신 NPC_Body_00~04 중에서 고른다(사용자 지정 2026-11-20).
+        /// 이미 2명이 쓰는 몸체는 피하고, 고른 몸체는 의뢰 동안 유지한다. 다른 인물의 몸체 규칙은 그대로 둔다.
+        /// </summary>
+        private Dictionary<string, string> BodyKeys(GameSession s, IReadOnlyList<NpcState> npcs)
+        {
+            if (_victimBodiesContractId != s.CurrentContract.ContractId)
+            {
+                _victimBodies.Clear();
+                _victimBodiesContractId = s.CurrentContract.ContractId;
+            }
+
+            var keys = new Dictionary<string, string>();
+            var victims = new List<NpcState>();
+            foreach (var npc in npcs)
+            {
+                if (s.GetPublicRole(npc.NpcId) == PublicRole.Victim) victims.Add(npc);
+                else keys[npc.NpcId] = BodyKey(s, npc);
+            }
+
+            foreach (var victim in victims.OrderBy(n => _victimBodies.ContainsKey(n.NpcId) ? 0 : 1).ThenBy(n => n.NpcId, System.StringComparer.Ordinal))
+            {
+                if (!_victimBodies.TryGetValue(victim.NpcId, out var body))
+                {
+                    var all = Enumerable.Range(0, NpcBodyPrefabs.Length).Select(i => "npc" + i).ToList();
+                    // 시신(전용 모델)은 서 있는 몸체를 쓰지 않으므로 세지 않는다.
+                    var standing = keys.Where(k => npcs.First(n => n.NpcId == k.Key).IsAlive || VictimPrefab == null).Select(k => k.Value).ToList();
+                    var open = all.Where(b => standing.Count(x => x == b) < MaxSameBody).ToList();
+                    if (open.Count == 0) open = all;
+                    body = open[GameSession.StableSeed("victim-body:" + victim.NpcId) % open.Count];
+                    _victimBodies[victim.NpcId] = body;
+                }
+                keys[victim.NpcId] = body;
+            }
+            return keys;
         }
 
         /// <summary>08 관찰 범위: 플레이어와 같은 방, 8 m 안의 인물만 보인다. 플레이어 자신은 항상 보인다.</summary>
