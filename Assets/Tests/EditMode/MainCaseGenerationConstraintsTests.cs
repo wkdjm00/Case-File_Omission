@@ -119,6 +119,31 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void RequireMurder_ChangesActualTruthWithoutOverwritingPoliceClassification()
+        {
+            var generator = new ContractGenerator(ContractGenerationConfig.CreateDefault(), new Random(713));
+            foreach (CrimeType representative in Enum.GetValues(typeof(CrimeType)))
+            {
+                var candidate = generator.CreateCandidate("preserve-classification-" + representative);
+                candidate.RepresentativeCrimeType = representative;
+                candidate.PrimaryCrimeType = CrimeType.AssaultInjury;
+                candidate.Truth.CoverUp = CoverUpMethod.None;
+
+                var constraints = new ContractConstraints { RequireMurder = true };
+                constraints.ApplyToCandidate(candidate);
+
+                Assert.AreEqual(representative, candidate.RepresentativeCrimeType,
+                    "경찰 대표 유형은 실제 진실 제약으로 덮어쓰지 않는다.");
+                Assert.AreEqual(CrimeType.Murder, candidate.PrimaryCrimeType,
+                    "실제 사건 유형만 살인으로 고정한다.");
+                Assert.AreEqual(ContractGenerator.RequiresHiddenBody(representative, CrimeType.Murder), candidate.Truth.BodyHidden);
+                Assert.AreEqual(ContractGenerator.RequiresDelayedDeath(representative, CrimeType.Murder), candidate.Truth.DelayedDeath);
+                if (candidate.Truth.BodyHidden)
+                    Assert.AreEqual(CoverUpMethod.BodyConcealment, candidate.Truth.CoverUp);
+            }
+        }
+
+        [Test]
         public void ExperimentTruthPlans_UseTheExactConfirmedMethodToolRelationshipOccupationDateAndObject()
         {
             var s = SessionAtStage(MainCaseTruthStage.ExperimentTruth, 31);
