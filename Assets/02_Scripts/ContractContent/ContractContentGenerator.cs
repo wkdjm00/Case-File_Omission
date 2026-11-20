@@ -155,7 +155,7 @@ namespace CaseFileOmission.ContractContent
         }
 
         /// <summary>
-        /// 후보 최대 10개 × 후보당 검증 최대 3회. 모두 실패하면 예외 없이 null을 돌려주고 result에 실패 내용을 담는다.
+        /// 후보 최대 3개 × 후보당 검증 최대 3회. 모두 실패하면 예외 없이 null을 돌려주고 result에 실패 내용을 담는다.
         /// </summary>
         public GeneratedContract TryGenerate(
             Func<string> contractIdFactory,
