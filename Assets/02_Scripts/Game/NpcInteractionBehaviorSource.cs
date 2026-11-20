@@ -25,6 +25,47 @@ namespace CaseFileOmission.Game
                 || string.IsNullOrEmpty(currentRoomId))
                 yield break;
 
+            string handler = s.HandlerPoliceId;
+            if (handler != null && PoliceRoster.AllPoliceIds.Contains(handler)
+                && s.PoliceLife.IsAlive(handler) && s.Occupancy.HasPosition(handler)
+                && s.Occupancy.GetRoom(handler) == currentRoomId)
+            {
+                var reportable = actor.InfoHistory
+                    .Where(r => r != null && actor.Knows(r.InfoId)
+                        && r.State == NpcInformationState.KnowsFact
+                        && !string.IsNullOrEmpty(r.SourceEventId)
+                        && (actor.WitnessedEventIds.Contains(r.SourceEventId)
+                            || r.InfoId.StartsWith("missing:", StringComparison.Ordinal))
+                        && !s.HasNpcReportedInfo(actor.NpcId, r.InfoId))
+                    .OrderBy(r => r.Minute ?? int.MaxValue)
+                    .ThenBy(r => r.InfoId, StringComparer.Ordinal)
+                    .FirstOrDefault();
+
+                if (reportable != null)
+                {
+                    string infoId = reportable.InfoId;
+                    bool urgent = actor.WitnessedEventIds.Contains(reportable.SourceEventId);
+                    yield return new NpcBehaviorCandidate
+                    {
+                        Kind = NpcBehaviorKind.Report,
+                        TargetId = handler,
+                        InfoId = infoId,
+                        RequiredRoomId = currentRoomId,
+                        IsUrgent = urgent,
+                        TargetIsTrusted = s.Planner.IsTrusted(actor.NpcId, handler),
+                        Execute = () =>
+                        {
+                            if (actor.IsAlive && s.Occupancy.HasPosition(actor.NpcId)
+                                && s.Occupancy.GetRoom(actor.NpcId) == currentRoomId
+                                && s.PoliceLife.IsAlive(handler) && s.Occupancy.HasPosition(handler)
+                                && s.Occupancy.GetRoom(handler) == currentRoomId
+                                && actor.Knows(infoId) && !s.HasNpcReportedInfo(actor.NpcId, infoId))
+                                s.ReportNpcInfoToPolice(actor.NpcId, infoId, currentRoomId, currentMinute);
+                        }
+                    };
+                }
+            }
+
             string playerRoom = s.PlayerRoom;
             if (playerRoom == currentRoomId)
             {
