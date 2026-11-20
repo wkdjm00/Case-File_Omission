@@ -333,6 +333,7 @@ namespace CaseFileOmission.Game
                     RelationshipId = "REL-01",
                     EarliestIncidentDate = "1984-10-19",
                     HolderIsVictim = true,
+                    DocumentHolderTag = "실제 실험 참가자·배포 안내문 보유자",
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Bedroom, "편지")
                 };
             }
@@ -348,7 +349,7 @@ namespace CaseFileOmission.Game
                     ToolId = "TOOL-05",
                     RelationshipId = "REL-06",
                     EarliestIncidentDate = "1984-10-01",
-                    HolderIsVictim = true,
+                    DocumentHolderTag = "학교 학생 정보 요청·전달 및 후보 선정 서류 접근자",
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
                 };
             }
@@ -364,7 +365,7 @@ namespace CaseFileOmission.Game
                     ToolId = "TOOL-01",
                     RelationshipId = "REL-05",
                     EarliestIncidentDate = "1984-11-20",
-                    HolderIsVictim = true,
+                    DocumentHolderTag = "제한 열람 기록·이전 회차 생존자 인계 기록 접근자",
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
                 };
             }
@@ -377,21 +378,29 @@ namespace CaseFileOmission.Game
             string Study(string obj) => CaseCatalog.ObjectId(HouseLayoutFactory.Study, obj);
             var plans = new[]
             {
-                (MainCaseClueNames.ExperimentCompositionDealProposal, "외부 제안자와 거래·연락 관계인 특별사업 협의 담당자", "1984-10-21", Study("계약서")),
-                (MainCaseClueNames.ProductPurchaseWishList, "민간 거래 대행인(개인 서류함 보유·관리)", "1984-10-29", Study("서류 더미")),
-                (MainCaseClueNames.ProductSalesSettlement, "특별사업 상품 판매·회계 자료 접근·보관자", "1984-11-01", Study("장부")),
-                (MainCaseClueNames.ViewingTicketRevenueSettlement, "관람권·특별 접근권 발급·판매·정산 자료 접근·보관자", "1984-11-01", Study("장부")),
-                (MainCaseClueNames.GovernmentSupportRewardLetter, "정부 지지에 협조하고 개인적 혜택을 받은 관계자", "1984-11-04", CaseCatalog.ObjectId(HouseLayoutFactory.Bedroom, "편지")),
-                (MainCaseClueNames.UpperClassHospitalityRecord, "상류층 접대·후원 기록 보관·열람자", "1984-11-11", Study("장부")),
-                (MainCaseClueNames.ExperimentContinuationDecisionRecord, "제한 열람 운영 검토 기록에 접근하는 내부 관계자", "1984-11-14", Study("서류 더미")),
-                (MainCaseClueNames.CollaboratorRewardDissenterPenaltyRecord, "협조 여부에 따른 행정 조치 기록 관리·열람 내부 관계자", "1984-11-15", Study("서류 더미")),
+                (Name: MainCaseClueNames.ExperimentCompositionDealProposal, Date: "1984-10-21", ObjectId: Study("계약서")),
+                (Name: MainCaseClueNames.ProductPurchaseWishList, Date: "1984-10-29", ObjectId: Study("서류 더미")),
+                (Name: MainCaseClueNames.ProductSalesSettlement, Date: "1984-11-01", ObjectId: Study("장부")),
+                (Name: MainCaseClueNames.ViewingTicketRevenueSettlement, Date: "1984-11-01", ObjectId: Study("장부")),
+                (Name: MainCaseClueNames.GovernmentSupportRewardLetter, Date: "1984-11-04", ObjectId: CaseCatalog.ObjectId(HouseLayoutFactory.Bedroom, "편지")),
+                (Name: MainCaseClueNames.UpperClassHospitalityRecord, Date: "1984-11-11", ObjectId: Study("장부")),
+                (Name: MainCaseClueNames.ExperimentContinuationDecisionRecord, Date: "1984-11-14", ObjectId: Study("서류 더미")),
+                (Name: MainCaseClueNames.CollaboratorRewardDissenterPenaltyRecord, Date: "1984-11-15", ObjectId: Study("서류 더미")),
             };
-            foreach (var (name, tag, date, obj) in plans)
+
+            // 개별 출현 조건이 미확정이므로 직업·관계·컴퓨터 조건을 임의로 붙이지 않는다.
+            // 아직 얻지 않은 기존 자료 중 하나를 선택하고, 문서 작성일 이후 사건의 기존 조사 오브젝트에 배치한다.
+            // 접근 NPC는 새로 만들지 않고 현재 사건 인물 중 한 명을 TEST_TEMP 자료 보관자로 기록한다.
+            var remaining = plans.Where(p => !MainCase.HasAcquired(p.Name)).ToArray();
+            if (remaining.Length == 0) return null;
+            var selected = remaining[_random.Next(remaining.Length)];
+            return new ContractConstraints
             {
-                if (MainCase.HasAcquired(name)) continue;
-                return new ContractConstraints { PlannedClueName = name, DocumentHolderTag = tag, EarliestIncidentDate = date, DocumentObjectId = obj };
-            }
-            return null;
+                PlannedClueName = selected.Name,
+                DocumentHolderTag = "기존 자료 보관·열람자 (TEST_TEMP)",
+                EarliestIncidentDate = selected.Date,
+                DocumentObjectId = selected.ObjectId
+            };
         }
 
         /// <summary>
