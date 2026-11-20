@@ -128,23 +128,20 @@ namespace CaseFileOmission.Tests
                     PlannedClueName = MainCaseClueNames.ParticipantOperatingRulesNotice,
                     RequireMurder = true, VictimOccupation = "학생", MethodId = "METHOD-03", ToolId = "TOOL-02",
                     RelationshipId = "REL-01", EarliestIncidentDate = "1984-10-19", HolderIsVictim = true,
-                    DocumentHolderTag = "실제 실험 참가자·배포 안내문 보유자",
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Bedroom, "편지")
                 },
                 new ContractConstraints
                 {
                     PlannedClueName = MainCaseClueNames.StudentInfoAcquisitionMemo,
                     RequireMurder = true, VictimOccupation = "사무원", MethodId = "METHOD-06", ToolId = "TOOL-05",
-                    RelationshipId = "REL-06", EarliestIncidentDate = "1984-10-01",
-                    DocumentHolderTag = "학교 학생 정보 요청·전달 및 후보 선정 서류 접근자",
+                    RelationshipId = "REL-06", EarliestIncidentDate = "1984-10-01", HolderIsVictim = true,
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
                 },
                 new ContractConstraints
                 {
                     PlannedClueName = MainCaseClueNames.SurvivorHandoverRecord,
                     RequireMurder = true, VictimOccupation = "공무원", MethodId = "METHOD-02", ToolId = "TOOL-01",
-                    RelationshipId = "REL-05", EarliestIncidentDate = "1984-11-20",
-                    DocumentHolderTag = "제한 열람 기록·이전 회차 생존자 인계 기록 접근자",
+                    RelationshipId = "REL-05", EarliestIncidentDate = "1984-11-20", HolderIsVictim = true,
                     DocumentObjectId = CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")
                 }
             };
@@ -186,14 +183,42 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
-        public void PowerTruth_EachDocument_IsPlacedWithHolderDateAndObject()
+        public void PowerTruth_EachDocument_UsesItsConfirmedHolderRoleDateAndExistingObject()
         {
             var s = SessionAtStage(MainCaseTruthStage.PowerTruth, 5);
-            int planned = 0;
-            foreach (var name in MainCaseClueNames.PowerTruthClues)
+            var expected = new Dictionary<string, (string HolderTag, string Date, string ObjectId)>
+            {
+                [MainCaseClueNames.ExperimentCompositionDealProposal] =
+                    ("특별사업 협의 담당자·외부 제안자와의 거래/연락 자료 접근자", "1984-10-21", CaseCatalog.ObjectId(HouseLayoutFactory.Study, "계약서")),
+                [MainCaseClueNames.ProductPurchaseWishList] =
+                    ("민간 거래 대행인·개인 서류 관리", "1984-10-29", CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")),
+                [MainCaseClueNames.ProductSalesSettlement] =
+                    ("특별사업 상품 판매·회계 자료 접근/보관자", "1984-11-01", CaseCatalog.ObjectId(HouseLayoutFactory.Study, "장부")),
+                [MainCaseClueNames.ViewingTicketRevenueSettlement] =
+                    ("관람권·특별 접근권 발급/판매/정산 자료 접근자", "1984-11-01", CaseCatalog.ObjectId(HouseLayoutFactory.Study, "장부")),
+                [MainCaseClueNames.GovernmentSupportRewardLetter] =
+                    ("정부 지지 협조·개인적 혜택 수신자", "1984-11-04", CaseCatalog.ObjectId(HouseLayoutFactory.Bedroom, "편지")),
+                [MainCaseClueNames.UpperClassHospitalityRecord] =
+                    ("상류층 접대·후원 관계 기록 관리/열람자", "1984-11-11", CaseCatalog.ObjectId(HouseLayoutFactory.Study, "장부")),
+                [MainCaseClueNames.ExperimentContinuationDecisionRecord] =
+                    ("실험 운영 문제·기록 불일치 제한 열람 검토 기록 접근자", "1984-11-14", CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")),
+                [MainCaseClueNames.CollaboratorRewardDissenterPenaltyRecord] =
+                    ("협력·비협조에 따른 행정 조치 기록 관리/열람자", "1984-11-15", CaseCatalog.ObjectId(HouseLayoutFactory.Study, "서류 더미")),
+            };
+
+            var verified = new HashSet<string>();
+            for (int i = 0; i < MainCaseClueNames.PowerTruthClues.Length; i++)
             {
                 var constraints = s.PlanMainCaseConstraints();
-                Assert.IsNotNull(constraints, name);
+                Assert.IsNotNull(constraints);
+                Assert.IsTrue(expected.ContainsKey(constraints.PlannedClueName));
+                Assert.IsTrue(verified.Add(constraints.PlannedClueName), "같은 자료를 중복 배치하지 않는다");
+                Assert.AreEqual(expected[constraints.PlannedClueName].HolderTag, constraints.DocumentHolderTag);
+                Assert.AreEqual(expected[constraints.PlannedClueName].Date, constraints.EarliestIncidentDate);
+                Assert.AreEqual(expected[constraints.PlannedClueName].ObjectId, constraints.DocumentObjectId);
+                Assert.IsFalse(string.IsNullOrEmpty(constraints.DocumentHolderTag));
+                Assert.IsFalse(constraints.DocumentHolderTag.Contains("TEST_TEMP"));
+
                 for (int seed = 1; seed <= 3; seed++)
                 {
                     var built = Generate(constraints, seed);
@@ -206,9 +231,8 @@ namespace CaseFileOmission.Tests
                     Assert.AreEqual(constraints.DocumentObjectId, c.PlannedClueObjectId);
                 }
                 s.MainCase.AcquireClue(constraints.PlannedClueName);
-                planned++;
             }
-            Assert.AreEqual(8, planned);
+            CollectionAssert.AreEquivalent(MainCaseClueNames.PowerTruthClues, verified);
             Assert.IsNull(s.PlanMainCaseConstraints(), "8개를 모두 얻으면 더 배치하지 않는다");
         }
 
@@ -220,7 +244,7 @@ namespace CaseFileOmission.Tests
             Assert.IsNotNull(offer);
             var c = offer.Contract;
             CollectionAssert.Contains(MainCaseClueNames.PowerTruthClues, c.PlannedMainCaseClue,
-                "권력의 진실 자료는 개별 출현 조건이 확정되지 않았으므로 관리 번호 순서로 강제하지 않는다.");
+                "권력의 진실 자료는 관리 번호 순서로 해금하지 않고, 자료별 보유 역할·날짜·오브젝트 조건을 적용한다.");
             Assert.IsTrue(s.AcceptContract().Success);
 
             string room = CaseCatalog.ObjectRoom(c.PlannedClueObjectId);
