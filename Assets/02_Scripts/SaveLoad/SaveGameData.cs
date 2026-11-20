@@ -57,5 +57,10 @@ namespace CaseFileOmission.SaveLoad
         public string SavedAtUtc;
         /// <summary>저장된 슬롯(수동 1~3, 자동 0).</summary>
         public int Slot;
+        /// <summary>게임용 난수 생성기의 seed와 상태. 비어 있으면 이전 저장 또는 외부 Random 주입 데이터다.</summary>
+        public int RandomSeed;
+        public string RandomState;
+        public string ContentVersion;
+        public string BuildVersion;
     }
 }

@@ -28,7 +28,10 @@ namespace CaseFileOmission.Game
         /// <summary>AI 제공자(배포 환경에서 설정). null이면 결정적 생성·검증기를 쓴다.</summary>
         public IAiContentProvider AiProvider;
 
-        /// <summary>테스트에서 시드를 고정할 때 넘긴다. null이면 새 Random.</summary>
+        /// <summary>재현 가능한 게임용 난수 시드. 설정하면 외부 Random보다 우선한다.</summary>
+        public int? RandomSeed;
+
+        /// <summary>테스트에서 커스텀 Random 구현을 주입할 때 사용한다.</summary>
         public Random Random;
     }
 
@@ -166,7 +169,6 @@ namespace CaseFileOmission.Game
         public string PlayerRoom => Occupancy.HasPosition(PlayerId) ? Occupancy.GetRoom(PlayerId) : null;
         public string HandlerPoliceId => CurrentContract?.HandlerPoliceId;
 
-        /// <summary>회의 도중에는 저장하지 않는다(회의 중 의문·차례 상태는 저장 대상이 아니다).</summary>
         /// <summary>모든 외부 행동은 동기식으로 완료되어 반환되므로, 조사·회의 상태 경계에서 저장할 수 있다.</summary>
         public bool CanSave => State.CurrentPhase != GamePhase.Resolved;
 
@@ -174,7 +176,9 @@ namespace CaseFileOmission.Game
         {
             if (config == null) throw new ArgumentNullException(nameof(config));
             PlayerId = string.IsNullOrEmpty(config.PlayerId) ? "player" : config.PlayerId;
-            _random = config.Random ?? new Random();
+            _random = config.RandomSeed.HasValue
+                ? new ReplayableRandom(config.RandomSeed.Value)
+                : config.Random ?? new Random();
             _aiProvider = config.AiProvider;
 
             var contractConfig = config.ContractConfig ?? ContractGenerationConfig.CreateDefault();
@@ -787,22 +791,30 @@ namespace CaseFileOmission.Game
         /// </summary>
         public GameActionResult Persuade(string npcId, bool playerKnowsActualCulprit, bool hasStrongSupportingEvidence, bool hasUnfavorableDirectEvidence)
         {
+            // 기존 호출부 호환용 오버로드다. 판정은 호출자가 넘긴 bool이 아니라 검증된 캠페인 상태와 실제 보유 자료로 다시 계산한다.
+            return PersuadeFromValidatedState(npcId, GetPersuasionStrongEvidence(), GetPersuasionDirectEvidence());
+        }
+
+        private GameActionResult PersuadeFromValidatedState(string npcId, bool hasStrongSupportingEvidence, bool hasUnfavorableDirectEvidence)
+        {
             var guard = GuardInvestigation(DefaultActionCost);
             if (!guard.Success) return guard;
-            // 07 2026-11-12: 한 의뢰에서 가해자 1명에게 1회만, 재시도 없음(대상 위치와 관계없이 이미 시도했으면 거부).
-            if (Campaign.PersuasionAttempted)
+            // 07: 단순 지목이나 호출 인자만으로는 안 된다. 보고서 판정에서 실제 가해자 식별이 기록되어 있어야 한다.
+            if (Campaign.PersuasionAttempted || !Campaign.CulpritIdentified)
                 return GameActionResult.Fail(GameActionFailure.InvalidInput);
+
             var target = GuardNpcInRoom(npcId);
             if (!target.Success) return target;
 
             var npc = Npcs.Get(npcId);
-            if (!playerKnowsActualCulprit || !npc.IsActualPerpetrator)
+            if (!npc.IsActualPerpetrator)
                 return GameActionResult.Fail(GameActionFailure.InvalidInput);
-            Campaign.PersuasionAttempted = true;
 
+            Campaign.PersuasionAttempted = true;
             var result = SpendTime(DefaultActionCost);
-            var persuasion = _persuasion.TryPersuade(npc, playerKnowsActualCulprit, hasStrongSupportingEvidence,
-                hasUnfavorableDirectEvidence, Relationships.GetTrust(npcId, PlayerId) > 0f);
+            var persuasion = _persuasion.TryPersuade(npc, playerKnowsActualCulprit: true,
+                hasStrongSupportingEvidence, hasUnfavorableDirectEvidence,
+                Relationships.GetTrust(npcId, PlayerId) > 0f);
             if (persuasion.Success)
             {
                 foreach (var material in Materials.Where(m => m.SourceNpcId == npcId))
@@ -819,13 +831,17 @@ namespace CaseFileOmission.Game
         /// 실제 가해자를 정답으로 식별한 상태가 기록되어 있어야 한다. 강한 신원 근거(+20)는 가해자를 특정하는 검증된 자료,
         /// 불리한 직접 증거(-15)는 가해 행위를 직접 뒷받침하는 물리 자료(범행 도구)다. 같은 자료가 둘 다면 직접 증거만 적용한다.
         /// </summary>
-        public GameActionResult Persuade(string npcId)
-        {
-            var held = CurrentContract == null ? new List<string>() : Clues.GetAllClueIds(CurrentContract.ContractId).ToList();
-            var direct = held.Where(id => PlaytestMaterial(id)?.MaterialId.Contains("tool-evidence") == true).ToList();
-            var strong = held.Where(id => Clues.GetDefinition(id).IdentifiesPerpetrator && !direct.Contains(id)).ToList();
-            return Persuade(npcId, Campaign.CulpritIdentified, strong.Count > 0, direct.Count > 0);
-        }
+        public GameActionResult Persuade(string npcId) =>
+            PersuadeFromValidatedState(npcId, GetPersuasionStrongEvidence(), GetPersuasionDirectEvidence());
+
+        private bool GetPersuasionDirectEvidence() =>
+            CurrentContract != null && Clues.GetAllClueIds(CurrentContract.ContractId)
+                .Any(id => PlaytestMaterial(id)?.MaterialId.Contains("tool-evidence") == true);
+
+        private bool GetPersuasionStrongEvidence() =>
+            CurrentContract != null && Clues.GetAllClueIds(CurrentContract.ContractId)
+                .Any(id => Clues.GetDefinition(id).IdentifiesPerpetrator
+                           && PlaytestMaterial(id)?.MaterialId.Contains("tool-evidence") != true);
 
         /// <summary>선행 자료 조건: 행동 전에 이미 보유한 자료만 센다(같은 행동에서 얻은 자료로 바로 다음 자료가 열리지 않음).</summary>
         private bool Unlocked(EvidenceMaterial m) => m.RequiresClueId == null || Clues.Exists(m.RequiresClueId);
@@ -1526,6 +1542,11 @@ namespace CaseFileOmission.Game
         {
             if (!CanSave) throw new InvalidOperationException("처리 중인 상태에서는 저장할 수 없습니다.");
             var data = SaveGameService.Capture(State, Organization, PoliceSuspicion, PoliceLife, MainCase, Endings, PlayerId);
+            if (_random is ReplayableRandom replayableRandom)
+            {
+                data.RandomSeed = replayableRandom.Seed;
+                data.RandomState = replayableRandom.CaptureState();
+            }
             data.World = WorldStateSaveService.Capture(BuildSaveTargets());
             return data;
         }
@@ -1543,7 +1564,31 @@ namespace CaseFileOmission.Game
 
         public static GameSession Load(SaveGameData data, GameSessionConfig config)
         {
-            var session = new GameSession(config);
+            var suppliedConfig = config ?? new GameSessionConfig();
+            GameSession session;
+            if (data != null && !string.IsNullOrWhiteSpace(data.RandomState))
+            {
+                session = new GameSession(new GameSessionConfig
+                {
+                    PlayerId = suppliedConfig.PlayerId,
+                    ContractConfig = suppliedConfig.ContractConfig,
+                    FinalReportConfig = suppliedConfig.FinalReportConfig,
+                    MainCaseRules = suppliedConfig.MainCaseRules,
+                    AiProvider = suppliedConfig.AiProvider,
+                    RandomSeed = data.RandomSeed
+                });
+                if (session._random is ReplayableRandom replayableRandom
+                    && !replayableRandom.TryRestoreState(data.RandomState))
+                {
+                    session.Logger.LogError("SAVE_INVALID_RANDOM_STATE", nameof(GameSession), data.Phase,
+                        "저장된 난수 상태를 읽을 수 없어 저장된 시드의 초기 상태에서 다시 시작합니다.", recoverable: true);
+                }
+            }
+            else
+            {
+                session = new GameSession(suppliedConfig);
+            }
+
             SaveGameService.Restore(data, session.State, session.Organization, session.PoliceSuspicion, session.PoliceLife,
                 session.MainCase, session.Endings, session.PlayerId, session.Logger);
 

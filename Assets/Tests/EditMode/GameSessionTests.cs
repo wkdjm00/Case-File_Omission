@@ -267,6 +267,53 @@ namespace CaseFileOmission.Tests
         }
 
         [Test]
+        public void SaveAndLoad_MidMeeting_RestoresTurnHandAndResolver()
+        {
+            var s = StartContract(seed: 19);
+            Assert.IsTrue(s.EndInvestigationEarly().Success);
+            Assert.IsTrue(s.StartMeeting().Success);
+            var expectedTurn = s.MeetingFlow.CurrentTurnId;
+            var expectedHand = s.MeetingFlow.PlayerHand.ToArray();
+            var expectedReserve = s.MeetingFlow.PlayerReserve.ToArray();
+            string json = SaveLoad.SaveGameService.ToJson(s.CaptureSave());
+
+            var loaded = GameSession.Load(SaveLoad.SaveGameService.FromJson(json), new GameSessionConfig { Random = new Random(1) });
+
+            Assert.AreEqual(GamePhase.Meeting, loaded.State.CurrentPhase);
+            Assert.IsNotNull(loaded.Meeting);
+            Assert.IsNotNull(loaded.MeetingFlow);
+            Assert.IsNotNull(loaded.MeetingResolver);
+            Assert.AreEqual(expectedTurn, loaded.MeetingFlow.CurrentTurnId);
+            CollectionAssert.AreEqual(expectedHand, loaded.MeetingFlow.PlayerHand);
+            CollectionAssert.AreEqual(expectedReserve, loaded.MeetingFlow.PlayerReserve);
+            Assert.IsTrue(loaded.LeaveMeeting().Success);
+            Assert.AreEqual(GamePhase.Investigation, loaded.State.CurrentPhase);
+        }
+
+        [Test]
+        public void PersuasionCannotBeUnlockedByCallerSuppliedBooleans()
+        {
+            var s = StartContract(seed: 29);
+            string culprit = s.CurrentContract.Truth.PerpetratorId;
+            string room = s.Occupancy.GetRoom(culprit);
+            if (s.PlayerRoom != room)
+            {
+                var path = s.Rooms.FindPath(s.PlayerRoom, room);
+                Assert.IsNotNull(path);
+                foreach (var next in path)
+                    Assert.IsTrue(s.MovePlayer(next).Success);
+            }
+            int before = s.State.RemainingTimeSlots;
+
+            var result = s.Persuade(culprit, playerKnowsActualCulprit: true,
+                hasStrongSupportingEvidence: true, hasUnfavorableDirectEvidence: true);
+
+            Assert.AreEqual(GameActionFailure.InvalidInput, result.Failure);
+            Assert.AreEqual(before, s.State.RemainingTimeSlots);
+            Assert.IsFalse(s.Campaign.PersuasionAttempted);
+        }
+
+        [Test]
         public void SaveAndLoad_MidInvestigation_RestoresContractCluesAndTime()
         {
             var s = StartContract();

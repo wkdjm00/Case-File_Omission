@@ -154,7 +154,7 @@ namespace CaseFileOmission.Playtest
             Ui.Button(body, "새 테스트 세션 시작", () =>
             {
                 _seed = int.TryParse(seed.text, out int v) ? v : DefaultSeed;
-                Session = new GameSession(new GameSessionConfig { Random = new System.Random(_seed) });
+                Session = new GameSession(new GameSessionConfig { RandomSeed = _seed });
                 Session.StartNewGame();
                 Session.CompletePrologue();
                 _resultShownFor = null;
@@ -249,7 +249,7 @@ namespace CaseFileOmission.Playtest
         public void AfterStateChange(bool animatePieces = true)
         {
             if (Session == null) return;
-            // 행동·시간·NPC 갱신, 의뢰 결과, 메인 서사 선택·엔딩이 확정된 직후 자동 저장(06). 회의 중에는 건너뛴다.
+            // 행동·시간·NPC 갱신, 회의 반응·의문 처리, 의뢰 결과, 메인 서사 선택·엔딩이 확정된 직후 자동 저장(06).
             AutoSave();
             if (Session.Endings.ExecutedEnding.HasValue && Current != View.Ending && ShouldShowEnding())
             {
@@ -811,7 +811,7 @@ namespace CaseFileOmission.Playtest
 
         private void SaveGame(int slot)
         {
-            if (Session == null || !Session.CanSave) { Toast("지금은 저장할 수 없습니다(회의 중)."); return; }
+            if (Session == null || !Session.CanSave) { Toast("지금은 저장할 수 없습니다(상태 처리 중)."); return; }
             try
             {
                 Session.SaveToSlot(Slots, slot);
@@ -825,8 +825,8 @@ namespace CaseFileOmission.Playtest
         }
 
         /// <summary>
-        /// 자동 저장(06 자동 저장 시점: 새 게임 / 행동과 시간·NPC 갱신 확정 직후 / 의뢰 결과 직후 / 메인 서사 선택·엔딩 직후).
-        /// 회의 중(반응·의문 처리 직후)은 회의 진행 상태 전체를 아직 저장하지 않아 회의가 끝난 직후에 저장한다.
+        /// 자동 저장(06): 새 게임, 플레이어 행동과 시간/NPC 갱신, 회의 반응·의문 처리,
+        /// 의뢰 정산, 메인 서사 선택·엔딩 전환이 안정 상태로 확정된 직후 호출한다.
         /// </summary>
         private void AutoSave()
         {

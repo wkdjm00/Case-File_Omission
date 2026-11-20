@@ -472,7 +472,7 @@ namespace CaseFileOmission.SaveLoad
     [Serializable]
     public sealed class WorldSaveData
     {
-        public const int CurrentVersion = 3;
+        public const int CurrentVersion = 4;
 
         public int Version;
         public EvidenceSaveData Evidence;

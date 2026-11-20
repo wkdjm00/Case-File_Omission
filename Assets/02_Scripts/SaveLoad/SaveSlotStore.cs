@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using CaseFileOmission.Core;
+using UnityEngine;
 
 namespace CaseFileOmission.SaveLoad
 {
@@ -13,7 +14,8 @@ namespace CaseFileOmission.SaveLoad
     {
         public const int AutoSlot = 0;
         public const int ManualSlotCount = 3;
-        public const int CurrentSchemaVersion = 1;
+        public const int CurrentSchemaVersion = 2;
+        public const string CurrentContentVersion = "case-file-omission-2026-11-20";
 
         private readonly string _directory;
 
@@ -40,6 +42,8 @@ namespace CaseFileOmission.SaveLoad
             string path = PathOf(slot);
             data.Slot = slot;
             data.SchemaVersion = CurrentSchemaVersion;
+            data.ContentVersion = CurrentContentVersion;
+            data.BuildVersion = Application.version;
             data.RunId = runId;
             data.SaveSequence = saveSequence;
             data.SavedAtUtc = DateTime.UtcNow.ToString("o");
