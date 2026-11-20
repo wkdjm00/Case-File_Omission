@@ -467,6 +467,7 @@ namespace CaseFileOmission.Game
             Campaign.PhysicallyDistortedClueIds.Clear();
             Campaign.PlayerAccusedCaseId = null; // 이전 의뢰의 지목 상태를 다음 의뢰에 재사용하지 않는다.
             Campaign.StolenMaterialIds.Clear();
+            Campaign.LaterVictimIds.Clear();
             Campaign.TheftIncidents.Clear();
             if (Campaign.PendingHandlerDeathBonus)
             {
@@ -2020,6 +2021,7 @@ namespace CaseFileOmission.Game
                 Campaign.NpcMinute += NpcMinutesPerTimeSlot;
                 var results = Planner.ExecuteTurn($"{CurrentContract.ContractId}-m{Campaign.NpcMinute}", CurrentContract.ContractId, Campaign.NpcMinute);
                 PolicePatrolTurn();
+                PerpetratorSilencingTurn();
                 LivingVictimsFollowPolice();
                 CheckTheftAbsence();
                 ReportWitnessedCrimesToPolice();
@@ -2140,6 +2142,45 @@ namespace CaseFileOmission.Game
                 if (path != null && path.Count > 0 && (best == null || path.Count < best.Count)) best = path;
             }
             if (best != null) Occupancy.PlaceAt(police, best[0]);
+        }
+
+        /// <summary>한 의뢰의 사망자 상한(최초 피해자 포함, 사용자 지정 2026-11-20).</summary>
+        public const int MaxContractDeaths = 5;
+        /// <summary>조건이 맞는 15분 턴마다 가해자가 입막음 살해를 실행할 확률(%). TEST_TEMP.</summary>
+        public const float SilencingChancePerTurn = 10f;
+
+        /// <summary>이번 의뢰에서 숨진 NPC 수(최초 피해자·추가 살해·사격 사망 모두 포함).</summary>
+        public int ContractDeathCount => CurrentContract == null ? 0 : Npcs.GetByContract(CurrentContract.ContractId).Count(n => !n.IsAlive);
+
+        /// <summary>
+        /// 사용자 지정 2026-11-20: 조사 중 시간이 지나면 추가 피해자가 생길 수 있다(최초 피해자 포함 최대 5명).
+        /// 규칙 세부는 노션에 없어 TEST_TEMP: 살아 있는 실제 가해자가 자기 범행을 아는 NPC와 단둘이 같은 방에 있고
+        /// (플레이어·경찰·다른 NPC 없음 — 목격자 없음) 턴마다 10% 확률로 그 NPC를 살해한다. 시신은 그 방에 남는다.
+        /// 사격 사망도 상한에 센다. 상한에 이르면 더 이상 일어나지 않는다.
+        /// </summary>
+        private void PerpetratorSilencingTurn()
+        {
+            if (CurrentContract == null || ContractDeathCount >= MaxContractDeaths) return;
+            string perpId = CurrentContract.Truth.PerpetratorId;
+            if (perpId == null || !Npcs.Exists(perpId) || !Npcs.Get(perpId).IsAlive || !Occupancy.HasPosition(perpId)) return;
+            string room = Occupancy.GetRoom(perpId);
+            if (PlayerRoom == room) return;
+            if (PoliceRoster.AllPoliceIds.Any(p => PoliceLife.IsAlive(p) && Occupancy.HasPosition(p) && Occupancy.GetRoom(p) == room)) return;
+
+            var others = Npcs.GetByContract(CurrentContract.ContractId)
+                .Where(n => n.NpcId != perpId && n.IsAlive && Occupancy.HasPosition(n.NpcId) && Occupancy.GetRoom(n.NpcId) == room).ToList();
+            if (others.Count != 1) return;
+            var target = others[0];
+            // 자기 범행(핵심 사건)을 아는 인물만 입막음 대상이 된다.
+            // 가해자를 가리키는 자료(가해자 특정·가해자에 관한 자료)의 정보를 실제로 알고 있어야 한다.
+            if (!Materials.Any(m => m.ContractId == CurrentContract.ContractId && (m.IdentifiesPerpetrator || m.SubjectNpcId == perpId)
+                                    && m.StatedInfoIds.Any(target.Knows)))
+                return;
+            if (_random.NextDouble() * 100.0 >= SilencingChancePerTurn) return;
+
+            target.MarkDeceased();
+            Campaign.LaterVictimIds.Add(target.NpcId);
+            State.EventLog.TryRecord(new GameEvent($"later-murder:{target.NpcId}", GameEventType.Custom, CurrentContract.ContractId, $"{perpId}:{room}:{Campaign.NpcMinute}"));
         }
 
         /// <summary>

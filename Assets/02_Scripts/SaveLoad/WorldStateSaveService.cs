@@ -134,6 +134,9 @@ namespace CaseFileOmission.SaveLoad
         /// <summary>이번 의뢰에서 플레이어가 훔친(가져간) 물건·시신 자료 ID. 현장에서 사라진 상태.</summary>
         public List<string> StolenMaterialIds = new List<string>();
 
+        /// <summary>조사 중 가해자가 추가로 살해한 인물(사용자 지정 2026-11-20). 최초 피해자는 포함하지 않는다.</summary>
+        public List<string> LaterVictimIds = new List<string>();
+
         /// <summary>06 절도 부수사건(같은 행위·같은 물건에 하나). 목격·부재 발견한 NPC는 인물별로 따로 기록한다.</summary>
         public List<TheftIncident> TheftIncidents = new List<TheftIncident>();
 
@@ -440,6 +443,7 @@ namespace CaseFileOmission.SaveLoad
                 PhysicallyDistortedClueIds = t.Campaign?.PhysicallyDistortedClueIds.ToArray() ?? Array.Empty<string>(),
                 PlayerAccusedCaseId = t.Campaign?.PlayerAccusedCaseId,
                 StolenMaterialIds = t.Campaign?.StolenMaterialIds.ToArray() ?? Array.Empty<string>(),
+                LaterVictimIds = t.Campaign?.LaterVictimIds.ToArray() ?? Array.Empty<string>(),
                 TheftIncidents = t.Campaign?.TheftIncidents.ToArray() ?? Array.Empty<TheftIncident>(),
                 RunId = t.Campaign?.RunId,
                 SaveSequence = t.Campaign?.SaveSequence ?? 0,
@@ -536,6 +540,7 @@ namespace CaseFileOmission.SaveLoad
                 t.Campaign.PhysicallyDistortedClueIds = (d.PhysicallyDistortedClueIds ?? Array.Empty<string>()).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
                 t.Campaign.PlayerAccusedCaseId = string.IsNullOrEmpty(d.PlayerAccusedCaseId) ? null : d.PlayerAccusedCaseId;
                 t.Campaign.StolenMaterialIds = (d.StolenMaterialIds ?? Array.Empty<string>()).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
+                t.Campaign.LaterVictimIds = (d.LaterVictimIds ?? Array.Empty<string>()).Where(id => !string.IsNullOrEmpty(id)).Distinct().ToList();
                 t.Campaign.TheftIncidents = (d.TheftIncidents ?? Array.Empty<TheftIncident>()).Where(i => i != null && !string.IsNullOrEmpty(i.IncidentId)).ToList();
                 t.Campaign.RunId = d.RunId;
                 t.Campaign.SaveSequence = Math.Max(0, d.SaveSequence);
