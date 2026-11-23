@@ -200,6 +200,17 @@ namespace CaseFileOmission.Tests
             Assert.IsTrue(s.State.EventLog.GetOrdered().Any(e =>
                 e.EventId == $"police-found-body:{s.CurrentContract.ContractId}:{target.NpcId}"));
             Assert.IsFalse(s.Clues.Exists(body.MaterialId), "경찰의 시신 발견만으로 플레이어가 단서를 자동 획득하지 않는다.");
+
+            var json = SaveLoad.SaveGameService.ToJson(s.CaptureSave());
+            var loaded = GameSession.Load(
+                SaveLoad.SaveGameService.FromJson(json),
+                new GameSessionConfig { Random = new Random(74) });
+            var restoredBody = loaded.Materials.Single(m => m.MaterialId == body.MaterialId);
+            Assert.IsTrue(restoredBody.IsBody, "시신 자료의 종류는 저장/복원 뒤에도 유지된다.");
+            Assert.IsTrue(loaded.GetInvestigationObjects().Any(o => o.ObjectId == restoredBody.ObjectId),
+                "불러온 뒤에도 시신은 플레이어의 조사 대상으로 남는다.");
+            Assert.IsTrue(loaded.Capacity.GetHeldClues(loaded.HandlerPoliceId).Contains(restoredBody.MaterialId),
+                "경찰이 직접 확보한 시신 자료도 저장/복원된다.");
         }
 
         [Test]
