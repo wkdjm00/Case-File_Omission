@@ -562,6 +562,20 @@ namespace CaseFileOmission.Game
             string planned = CurrentContract.PlannedClueObjectId;
             if (planned != null && objects.All(o => o.ObjectId != planned))
                 objects.Add(new InvestigationObject { ObjectId = planned, RoomId = CaseCatalog.ObjectRoom(planned), Name = CaseCatalog.ObjectName(planned) });
+
+            // 조사 도중 새로 생긴 시신도 정식 조사 대상으로 추가한다.
+            // 정적 사건 오브젝트 목록만 재생성하면 동적 시신 자료가 플레이어 조사 목록에서 빠질 수 있다.
+            foreach (var body in Materials.Where(m => m.ContractId == CurrentContract.ContractId && m.IsBody
+                         && !string.IsNullOrEmpty(m.ObjectId) && Rooms.RoomExists(m.RoomId)))
+            {
+                if (objects.All(o => o.ObjectId != body.ObjectId))
+                    objects.Add(new InvestigationObject
+                    {
+                        ObjectId = body.ObjectId,
+                        RoomId = body.RoomId,
+                        Name = string.IsNullOrWhiteSpace(body.Title) ? CaseCatalog.ObjectName(body.ObjectId) : body.Title
+                    });
+            }
             return objects;
         }
 
