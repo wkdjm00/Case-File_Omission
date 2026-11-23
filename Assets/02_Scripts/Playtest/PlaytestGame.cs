@@ -1166,10 +1166,49 @@ namespace CaseFileOmission.Playtest
             if (Session.State.CurrentPhase != GamePhase.Investigation || Session.State.IsTimeBlockEnded) return;
             switch (Board.FindInteractable(Session, out var id))
             {
-                case BoardView.InteractableKind.Object: InvestigateObject(id); break;
-                case BoardView.InteractableKind.Npc: TalkDialogue(id); break;
+                case BoardView.InteractableKind.Object: ObjectInteraction(id); break;
+                case BoardView.InteractableKind.Npc: NpcInteraction(id); break;
                 case BoardView.InteractableKind.Police: PoliceDialogue(id); break;
             }
+        }
+
+        /// <summary>
+        /// 사용자 지정 2026-11-23: 조사 대상에 E — 가져갈 수 있는 것(조직 지정 물건·귀중품·시신)이나 컴퓨터(서재)가 있으면 선택지로 고른다.
+        /// 없으면 바로 조사한다.
+        /// </summary>
+        private void ObjectInteraction(string objectId)
+        {
+            var s = Session;
+            var stealable = s.StealableMaterialsHere().Where(m => m.ObjectId == objectId).ToList();
+            bool computer = Rooms.HouseLayoutFactory.RoomHasComputer(s.PlayerRoom);
+            if (stealable.Count == 0 && !computer) { InvestigateObject(objectId); return; }
+
+            var choices = new List<(string, Action)>();
+            if (!s.InvestigatedObjectIds.Contains(objectId)) choices.Add(("조사한다 (1시간)", () => InvestigateObject(objectId)));
+            foreach (var m in stealable)
+            {
+                string mid = m.MaterialId;
+                bool body = s.IsBodyMaterial(mid);
+                string label = body ? "시신을 치운다 (15분 · 같은 방 인물은 목격)"
+                    : $"가져간다 (1시간 · 같은 방 인물은 목격) — {(s.Clues.Exists(mid) ? PlaytestTexts.MaterialTitle(s, mid) : ContractContent.CaseCatalog.ObjectName(m.ObjectId) + " 안의 물건")}{(mid == s.CurrentContract.OrgCondition.TargetId ? " · 조직 지정" : "")}";
+                choices.Add((label, () => Act(s.Steal(mid), body ? "시신을 현장에서 치웠다." : "물건을 챙겼다.")));
+            }
+            if (computer) choices.Add(("컴퓨터를 켠다 (대상자 번호 파일)", () => OpenWindow(() => _computer.OpenPasswordPrompt())));
+            choices.Add(("그만둔다", null));
+            _field.ShowDialogue(ContractContent.CaseCatalog.ObjectName(objectId), new[] { "무엇을 할까?" }, choices);
+        }
+
+        /// <summary>사용자 지정 2026-11-23: 인물에게 E — 이 방에서 대화가 오가는 중이면 엿들을지 말을 걸지 고른다.</summary>
+        private void NpcInteraction(string npcId)
+        {
+            var s = Session;
+            int talking = s.CurrentOverhearableExchanges().Count;
+            if (talking == 0) { TalkDialogue(npcId); return; }
+            var choices = new List<(string, Action)>();
+            if (s.State.RemainingTimeSlots >= GameSession.OverhearCost) choices.Add(("엿듣는다 (30분)", () => Act(s.Overhear())));
+            choices.Add(("말을 건다 (30분)", () => TalkDialogue(npcId)));
+            choices.Add(("그만둔다", null));
+            _field.ShowDialogue(PlaytestTexts.TempName(s, npcId), new[] { $"지금 이 방에서 대화가 오가고 있다({talking}건)." }, choices);
         }
 
         /// <summary>
