@@ -318,7 +318,7 @@ namespace CaseFileOmission.ContractContent
             }
         }
 
-        /// <summary>무작위로 고르지 않고 진실·시간표로만 정해지는 실제 세부 종류(ASS-02는 반복 공격 경위를 만들지 않아 생성되지 않는다).</summary>
+        /// <summary>무작위로 고르지 않고 진실·시간표로만 정해지는 실제 세부 종류(ASS-02 반복 공격은 시간표가 직접 구성한다).</summary>
         private static readonly HashSet<string> TimelineDeterminedSubtypes = new HashSet<string>
         {
             "ACT-SUB-MUR-02", "ACT-SUB-MUR-04", "ACT-SUB-ASS-03"
