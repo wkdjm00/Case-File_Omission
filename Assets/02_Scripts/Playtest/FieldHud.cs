@@ -98,11 +98,12 @@ namespace CaseFileOmission.Playtest
         // ───────────────────────── HUD ─────────────────────────
 
         /// <summary>현장 HUD를 그린다. 값은 모두 실제 게임 데이터에서 읽는다.</summary>
-        public void BuildHud(RectTransform parent, GameSession s)
+        /// <param name="onClock">시계(모래시계) 패널을 눌렀을 때 — 시간 보내기·조사 끝내기 선택지(사용자 지정 2026-11-20).</param>
+        public void BuildHud(RectTransform parent, GameSession s, System.Action onClock = null)
         {
             BuildTrust(parent, s);
             BuildSuspicionList(parent, s);
-            BuildClock(parent, s);
+            BuildClock(parent, s, onClock);
             BuildRemaining(parent, s);
         }
 
@@ -221,10 +222,12 @@ namespace CaseFileOmission.Playtest
         }
 
         /// <summary>오른쪽 세로 영역: 위 모래시계+작은 연도, 가운데 월/일, 아래 현재 시각.</summary>
-        private static void BuildClock(RectTransform parent, GameSession s)
+        private static void BuildClock(RectTransform parent, GameSession s, System.Action onClock)
         {
             var date = WorldDate(s);
             var panel = Ui.Anchor(Ui.Panel(parent, "Clock", PaperColor), 0.895f, 0.66f, 0.994f, 0.94f);
+            if (onClock != null)
+                panel.gameObject.AddComponent<Button>().onClick.AddListener(() => onClock());
 
             var icon = Ui.Rect(panel, "Hourglass");
             icon.anchorMin = icon.anchorMax = new Vector2(0.28f, 0.86f);

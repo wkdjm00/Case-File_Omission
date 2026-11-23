@@ -45,7 +45,6 @@ namespace CaseFileOmission.Playtest
 
         private RectTransform _hudLayer, _modalLayer, _toastLayer, _debugLayer, _worldLayer, _dialogueLayer;
         private FieldHud _field;
-        private bool _menuOpen;
         private readonly List<GameObject> _hiddenDuringDialogue = new List<GameObject>();
         private PhoneController _phone;
         private readonly List<string> _log = new List<string>();
@@ -55,7 +54,6 @@ namespace CaseFileOmission.Playtest
         private bool _debugVisible;
         private Vector3 _boardCamPos = new Vector3(-3f, 26f, -14f);
         private Quaternion _boardCamRot = Quaternion.Euler(58f, 0f, 0f);
-        private int _passSlots = 1;
 
         // 결과 화면용: 의뢰 시작 시점 값
         private float _trustAtStart, _handlerSuspicionAtStart;
@@ -233,7 +231,7 @@ namespace CaseFileOmission.Playtest
             Ui.Clear(WindowLayer);
         }
 
-        private void OpenWindow(Action open)
+        public void OpenWindow(Action open)
         {
             CloseWindow();
             open();
@@ -346,111 +344,31 @@ namespace CaseFileOmission.Playtest
         private void BuildBoardHud()
         {
             var s = Session;
-            _field.BuildHud(_hudLayer, s);
+            _field.BuildHud(_hudLayer, s, OpenTimeChoices);
             if (s.State.IsTimeBlockEnded)
                 BuildBlockEndedModal();
+        }
 
-            // 조사 메뉴: HUD 배치(09)를 가리지 않게 평소엔 접어 두고 Tab·버튼으로 연다. 엿듣기·관찰·회유·시간 보내기·조사 종료·조작·책상 이동.
-            var toggle = Ui.Button(_hudLayer, _menuOpen ? "조사 메뉴 닫기 [Tab]" : "조사 메뉴 [Tab]", () => { _menuOpen = !_menuOpen; RefreshHud(); }, true, 44, Ui.AccentColor);
-            Ui.Anchor((RectTransform)toggle.transform, 0.86f, 0.205f, 0.995f, 0.25f);
-            _hiddenDuringDialogue.Add(toggle.gameObject);
-            if (!_menuOpen) return;
-
-            var panel = Ui.Anchor(Ui.Panel(_hudLayer, "BoardMenu"), 0.73f, 0.26f, 0.995f, 0.65f);
-            var content = Ui.Scroll(Ui.Stretch(Ui.Rect(panel, "Scroll"), 4, 4, 4, 4), Ui.PanelColor);
-
-            string room = s.PlayerRoom;
-            Ui.Line(content, $"현재 위치: {PlaytestTexts.Room(room)}", 24);
-            Ui.Line(content, $"사건 현장: {PlaytestTexts.Room(s.Campaign.SceneRoomId)} (붉은 표식) · {PlaytestTexts.Crime(s.CurrentContract.PoliceCrimeType)} 사건", 18, Ui.DimTextColor);
-            Ui.Line(content, $"{PlaytestTexts.TimeBlock(s.State.CurrentTimeBlock)} {s.State.CurrentDay}일차 · 시간대 끝 {PlaytestTexts.WorldClock(s, s.BlockEndMinute)} · 메인 사건 {StageName(s.MainCase.CurrentStage)}", 18, Ui.DimTextColor);
-
-            // 체크리스트 2-6: 조사 중에도 현재 의뢰의 보고서와 보유 단서를 확인·작성할 수 있게 한다(같은 보고서 화면).
-            Ui.Button(content, "의뢰 보고서 열기 (단서 확인·핵심 문장 작성)", () => OpenWindow(_report.Open), true, 46, Ui.AccentColor);
+        /// <summary>
+        /// 사용자 지정 2026-11-20: 모래시계(시계 패널)를 누르면 시간 보내기·조사 일찍 끝내기를 고른다. 이민 자격이 있으면 이민도 여기서 고른다.
+        /// </summary>
+        private void OpenTimeChoices()
+        {
+            var s = Session;
+            if (s.State.CurrentPhase != GamePhase.Investigation || s.State.IsTimeBlockEnded) return;
+            var choices = new List<(string, Action)>();
+            foreach (int slots in new[] { 1, 2, 4 })
+            {
+                int n = slots;
+                if (s.State.RemainingTimeSlots >= n)
+                    choices.Add(($"{n * GameStateController.SlotMinutes}분 머무른다", () => Act(s.PassTime(n))));
+            }
+            choices.Add(("조사를 일찍 끝낸다 (이번 시간대 끝까지)", () => Act(s.EndInvestigationEarly())));
             if (s.CanEmigrate)
-                Ui.Button(content, "해외로 도주한다 (이민 — 게임이 끝난다)", () => _field.ShowDialogue("이민", new[] { "\"모든 것을 두고 이 나라를 떠난다. 돌아올 수 없다.\"" },
-                    new List<(string, Action)> { ("떠난다", () => Act(s.Emigrate())), ("그만둔다", null) }), true, 46, Ui.AccentColor);
-            Ui.Line(content, $"권총: 장전 {s.Firearm.CurrentAmmo}발 · 남은 탄 {s.Firearm.ReserveAmmo}발 — F 사격(1시간) · R 재장전(1시간)", 18, Ui.DimTextColor);
-
-            // 06 §8 단서 버리기(15분, 현장에 남음, 보고서 기록 유지)·줍기(1시간).
-            var held = s.Clues.GetHeldByPlayerClueIds(s.CurrentContract.ContractId);
-            if (held.Count > 0)
-            {
-                Ui.Line(content, "— 단서 버리기 (15분 · 경찰 앞이면 발각) —", 18, Ui.DimTextColor);
-                foreach (var cid in held)
-                {
-                    string id = cid;
-                    Ui.Button(content, "버린다 — " + PlaytestTexts.MaterialTitle(s, id), () => Act(s.DropClue(id), "단서를 내려놓았다(보고서 기록은 남는다)."), !s.State.IsTimeBlockEnded, 40, null, 16);
-                }
-            }
-            foreach (var cid in s.DroppedCluesHere())
-            {
-                string id = cid;
-                Ui.Button(content, "줍는다 (1시간) — " + PlaytestTexts.MaterialTitle(s, id), () => Act(s.PickUpClue(id), "단서를 다시 챙겼다."), !s.State.IsTimeBlockEnded, 40, null, 16);
-            }
-
-            // 06 절도·시신 탈취: 조직 지정 물건·귀중품 속 물건·시신만. 같은 방 인물은 목격한다.
-            var stealable = s.StealableMaterialsHere();
-            if (stealable.Count > 0)
-            {
-                Ui.Line(content, "— 가져갈 수 있는 것 (같은 방 인물은 목격) —", 18, Ui.DimTextColor);
-                foreach (var m in stealable)
-                {
-                    string mid = m.MaterialId;
-                    bool body = s.IsBodyMaterial(mid);
-                    string label = body ? "시신을 치운다 (15분)"
-                        : $"훔친다 (1시간) — {(s.Clues.Exists(mid) ? PlaytestTexts.MaterialTitle(s, mid) : ContractContent.CaseCatalog.ObjectName(m.ObjectId) + " 안의 물건")}{(mid == s.CurrentContract.OrgCondition.TargetId ? " · 조직 지정" : "")}";
-                    Ui.Button(content, label, () => Act(s.Steal(mid), body ? "시신을 현장에서 치웠다." : "물건을 챙겼다."), !s.State.IsTimeBlockEnded, 44, null, 17);
-                }
-            }
-
-            // 이동은 WASD로 한다(사용자 지정). 방을 옮겨도 시간은 들지 않는다(06: 이동 0시간).
-            Ui.Line(content, "— 이동: WASD (0분) · 카메라: 마우스(메뉴를 닫으면) —", 18, Ui.DimTextColor);
-
-            Ui.Line(content, "— 이 방의 조사 대상 (가까이 가서 E · 각 1시간) —", 18, Ui.DimTextColor);
-            foreach (var obj in s.GetInvestigationObjects().Where(o => o.RoomId == room))
-                Ui.Line(content, (s.InvestigatedObjectIds.Contains(obj.ObjectId) ? "✓ " : "· ") + obj.Name, 18);
-            int talking = s.CurrentOverhearableExchanges().Count;
-            Ui.Button(content, talking > 0 ? $"엿듣기 30분 — 지금 이 방에서 오가는 대화 {talking}건" : "엿듣기 — 지금 이 방에서 오가는 대화가 없다", () => Act(s.Overhear()),
-                talking > 0 && !s.State.IsTimeBlockEnded && s.State.RemainingTimeSlots >= GameSession.OverhearCost);
-            if (Rooms.HouseLayoutFactory.RoomHasComputer(room))
-                Ui.Button(content, "이 방 컴퓨터: 대상자 번호 파일 비밀번호", () => OpenWindow(() => _computer.OpenPasswordPrompt()), true);
-
-            Ui.Line(content, "— 같은 방의 인물 —", 18, Ui.DimTextColor);
-            bool anyone = false;
-            foreach (var npc in s.Npcs.GetByContract(s.CurrentContract.ContractId).Where(n => s.Occupancy.HasPosition(n.NpcId) && s.Occupancy.GetRoom(n.NpcId) == room))
-            {
-                anyone = true;
-                string label = $"{PlaytestTexts.TempName(s, npc.NpcId)} · {PlaytestTexts.PublicRole(s, npc)} · {PlaytestTexts.Personality(npc.Personality)}{(npc.IsAlive ? "" : " (사망)")}";
-                Ui.Line(content, label, 19);
-                var row = Ui.Row(content);
-                string id = npc.NpcId;
-                Ui.Button(row, "관찰 30분", () => ObserveNpc(id), npc.IsAlive && !s.State.IsTimeBlockEnded, 44, null, 17);
-                Ui.Button(row, "회유 1시간", () => Persuade(id), npc.IsAlive && !s.State.IsTimeBlockEnded && !s.Campaign.PersuasionAttempted, 44, null, 17);
-            }
-            string handler = s.HandlerPoliceId;
-            if (handler != null && s.Occupancy.HasPosition(handler) && s.Occupancy.GetRoom(handler) == room)
-            {
-                anyone = true;
-                Ui.Line(content, $"{PlaytestTexts.PoliceName(handler)} · 담당 경찰", 19);
-                Ui.Button(content, "경찰에게 의뢰 포기를 알린다 (조직 신뢰도 -2)", ConfirmAbandon, true, 44, Ui.AccentColor);
-            }
-            if (!anyone) Ui.Line(content, "(없음)", 18, Ui.DimTextColor);
-
-            Ui.Line(content, "— 시간 —", 18, Ui.DimTextColor);
-            _passSlots = Mathf.Clamp(_passSlots, 1, Mathf.Max(1, s.State.RemainingTimeSlots));
-            var passRow = Ui.Row(content);
-            Ui.Button(passRow, "−", () => { _passSlots--; RefreshHud(); });
-            Ui.Button(passRow, $"{_passSlots * GameStateController.SlotMinutes}분", null, false);
-            Ui.Button(passRow, "+", () => { _passSlots++; RefreshHud(); });
-            Ui.Button(content, $"시간 보내기 ({_passSlots * GameStateController.SlotMinutes}분 머무르기)", () => Act(s.PassTime(_passSlots)), !s.State.IsTimeBlockEnded && s.State.RemainingTimeSlots > 0);
-            Ui.Button(content, "조사 종료 — 시간대 끝까지 진행", () => Act(s.EndInvestigationEarly()), !s.State.IsTimeBlockEnded);
-
-            Ui.Line(content, "— 물리적 증거·기록 조작 —", 18, Ui.DimTextColor);
-            Ui.Button(content, s.IsPhysicalManipulationUnlocked ? "조작할 단서 고르기 (1시간)" : "잠김: 최종 보고서 완성 + 이번 의뢰 첫 회의 이후",
-                () => OpenWindow(() => _report.OpenManipulation()), s.IsPhysicalManipulationUnlocked && !s.State.IsTimeBlockEnded);
-
-            Ui.Line(content, " ", 6);
-            Ui.Button(content, "책상으로 (컴퓨터·보고서·사건보드)", GoDesk, true, 48, Ui.AccentColor);
+                choices.Add(("해외로 도주한다 (이민 — 게임이 끝난다)", () => _field.ShowDialogue("이민", new[] { "\"모든 것을 두고 이 나라를 떠난다. 돌아올 수 없다.\"" },
+                    new List<(string, Action)> { ("떠난다", () => Act(s.Emigrate())), ("그만둔다", null) })));
+            choices.Add(("그만둔다", null));
+            _field.ShowDialogue("시간", new[] { $"남은 시간 {s.State.RemainingTimeSlots * GameStateController.SlotMinutes / 60}시간 {s.State.RemainingTimeSlots * GameStateController.SlotMinutes % 60}분" }, choices);
         }
 
         private void BuildBlockEndedModal()
@@ -968,7 +886,7 @@ namespace CaseFileOmission.Playtest
             bool blocked = _phone.InCall || WindowLayer.childCount > 0 || _modalLayer.childCount > 0 || _field.DialogueOpen;
             // 마우스 시점(사용자 지정): 현장에서 창·대화·조사 메뉴가 없으면 커서를 잠그고 마우스 움직임으로 카메라를 돌린다.
             // 커서가 필요한 화면(창·대화창·모달·조사 메뉴)이나 Alt를 누르는 동안은 커서를 풀어 UI를 클릭할 수 있게 한다.
-            bool mouseLook = Current == View.Board && !blocked && !_menuOpen && !(kb != null && (kb.leftAltKey.isPressed || kb.rightAltKey.isPressed));
+            bool mouseLook = Current == View.Board && !blocked && !(kb != null && (kb.leftAltKey.isPressed || kb.rightAltKey.isPressed));
             SetMouseLook(mouseLook);
 
             if (Current == View.Board)
@@ -985,7 +903,7 @@ namespace CaseFileOmission.Playtest
 
             if (Current == View.Board)
             {
-                if (kb != null && kb.tabKey.wasPressedThisFrame) { _menuOpen = !_menuOpen; RefreshHud(); }
+                if (kb != null && kb.tabKey.wasPressedThisFrame && Session.CurrentContract != null) OpenWindow(_report.Open); // Tab: 보고서(단서·내용 확인, 조작·버리기)
                 UpdatePlayerMovement(kb);
                 if (kb != null && kb.eKey.wasPressedThisFrame) InteractNearest();
                 if (kb != null && kb.fKey.wasPressedThisFrame) ConfirmShot();
@@ -1007,10 +925,12 @@ namespace CaseFileOmission.Playtest
 
         // ───────────────────────── 현장 이동(WASD)·카메라(마우스) ─────────────────────────
 
-        private float _camDistance = 4.5f;
+        // 사용자 지정 2026-11-23: 캐릭터 뒤 가까운 낮은 시점(보내 준 장면 기준), 위아래도 다시 움직이고 회전은 조금 느리게.
+        private float _camDistance = 3f;
         private float _camYaw;
-        private const float CamPitch = 45f; // 위아래 고정(사용자 지정)
-        private const float MouseLookSensitivity = 0.2f; // 도/픽셀
+        private float _camPitch = 25f;
+        private const float CamPitchMin = 5f, CamPitchMax = 70f;
+        private const float MouseLookSensitivity = 0.12f; // 도/픽셀
         private const float PlayerRadius = 0.25f;
 
         /// <summary>
@@ -1073,7 +993,7 @@ namespace CaseFileOmission.Playtest
         private void CameraPose(Transform me, out Vector3 position, out Quaternion rotation)
         {
             var focus = me.position + Vector3.up * 0.6f;
-            rotation = Quaternion.Euler(CamPitch, _camYaw, 0);
+            rotation = Quaternion.Euler(_camPitch, _camYaw, 0);
             position = focus - rotation * Vector3.forward * _camDistance;
         }
 
@@ -1090,8 +1010,8 @@ namespace CaseFileOmission.Playtest
         private void OnDisable() => SetMouseLook(false);
 
         /// <summary>
-        /// 탐사 카메라(사용자 지정): 캐릭터를 중심으로 마우스를 좌우로 움직이면 좌우로만 돈다(커서 잠금 상태).
-        /// 위아래 각도는 45도로 고정한다. 휠로 거리를 조절한다. 시작은 캐릭터 뒤쪽.
+        /// 탐사 카메라(사용자 지정): 캐릭터를 중심으로 마우스를 움직이면 좌우·위아래로 돈다(커서 잠금 상태).
+        /// 위아래는 5~70도 사이로 제한한다. 휠로 거리를 조절한다. 시작은 캐릭터 뒤쪽.
         /// </summary>
         private void UpdateBoardCamera(bool allowInput)
         {
@@ -1100,7 +1020,9 @@ namespace CaseFileOmission.Playtest
             var mouse = Mouse.current;
             if (mouse != null && allowInput)
             {
-                _camYaw += mouse.delta.ReadValue().x * MouseLookSensitivity;
+                var delta = mouse.delta.ReadValue();
+                _camYaw += delta.x * MouseLookSensitivity;
+                _camPitch = Mathf.Clamp(_camPitch - delta.y * MouseLookSensitivity, CamPitchMin, CamPitchMax);
                 float scroll = mouse.scroll.ReadValue().y;
                 if (Mathf.Abs(scroll) > 0.01f)
                     _camDistance = Mathf.Clamp(_camDistance - Mathf.Sign(scroll) * 0.6f, 2.5f, 12f);

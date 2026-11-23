@@ -58,6 +58,12 @@ namespace CaseFileOmission.Playtest
             var book = Sheet(root, "Cover", art.ReportCover, 0.03f, 0.03f, 0.97f, 0.97f, Ui.PanelColor);
             var close = Ui.Button(root, "닫기", () => { _g.CloseWindow(); _g.RefreshHud(); }, true, 40, Ui.AccentColor);
             Ui.Anchor((RectTransform)close.transform, 0.88f, 0.92f, 0.97f, 0.97f);
+            // 사용자 지정 2026-11-20: 단서 조작·버리기는 보고서에서 한다(임시 버튼 — 배치는 나중에 받은 이미지대로).
+            if (S.CurrentContract != null && S.State.CurrentPhase == Core.GamePhase.Investigation)
+            {
+                var manage = Ui.Button(root, "단서 조작·버리기", () => { _g.CloseWindow(); _g.OpenWindow(OpenManipulation); }, true, 40);
+                Ui.Anchor((RectTransform)manage.transform, 0.72f, 0.92f, 0.87f, 0.97f);
+            }
             var title = Ui.Label(root, "의뢰 보고서", 30, new Color(0.92f, 0.86f, 0.72f), TextAnchor.MiddleLeft);
             Ui.Anchor(title.rectTransform, 0.06f, 0.92f, 0.5f, 0.97f);
             if (report == null) { Ui.Line(book, "진행 중인 의뢰가 없습니다."); return; }
@@ -184,10 +190,30 @@ namespace CaseFileOmission.Playtest
         public void OpenManipulation()
         {
             var s = S;
-            var body = Ui.Window(_g.WindowLayer, "물리적 증거·기록 조작", () => { _g.CloseWindow(); _g.RefreshHud(); }, out _, 0.25f, 0.15f, 0.75f, 0.85f);
+            var body = Ui.Window(_g.WindowLayer, "단서 조작·버리기", () => { _g.CloseWindow(); _g.RefreshHud(); }, out _, 0.25f, 0.15f, 0.75f, 0.85f);
             var list = Ui.Scroll(Ui.Stretch(Ui.Rect(body, "List")));
-            Ui.Line(list, "보유한 물리적 증거만 대상. 성공 70% 고정. 성공·실패 모두 발각되지 않는다. 시도 1시간.", 18, Ui.DimTextColor);
             var held = s.Clues.GetHeldByPlayerClueIds(s.CurrentContract.ContractId);
+            bool canAct = !s.State.IsTimeBlockEnded;
+
+            // 06 §8 단서 버리기(15분, 지금 있는 방에 남음, 보고서 기록 유지). 다시 줍기는 현장에서 E.
+            Ui.Line(list, "— 단서 버리기 (15분 · 지금 있는 방에 남는다 · 경찰 앞이면 발각) —", 18, Ui.DimTextColor);
+            if (held.Count == 0) Ui.Line(list, "(가진 단서가 없다)", 18, Ui.DimTextColor);
+            foreach (var id in held)
+            {
+                string cid = id;
+                Ui.Button(list, "버린다 — " + PlaytestTexts.MaterialTitle(s, cid), () =>
+                {
+                    var r = s.DropClue(cid);
+                    _g.Toast(r.Success ? "단서를 내려놓았다(보고서 기록은 남는다)." : "버릴 수 없다: " + r.Failure);
+                    _g.CloseWindow();
+                    _g.AfterStateChange();
+                }, canAct, 40, null, 16);
+            }
+
+            Ui.Line(list, " ", 8);
+            Ui.Line(list, "— 물리적 증거·기록 조작 —", 18, Ui.DimTextColor);
+            if (!s.IsPhysicalManipulationUnlocked) { Ui.Line(list, "잠김: 최종 보고서 완성 + 이번 의뢰 첫 회의 이후", 18, Ui.DimTextColor); return; }
+            Ui.Line(list, "보유한 물리적 증거만 대상. 성공 70% 고정. 성공·실패 모두 발각되지 않는다. 시도 1시간.", 18, Ui.DimTextColor);
             var physical = held.Where(id => s.Clues.GetDefinition(id).Format == ClueFormat.PhysicalObject).ToList();
             if (physical.Count == 0) Ui.Line(list, "(보유한 물리적 증거가 없다)", 18, Ui.DimTextColor);
             foreach (var id in physical)
