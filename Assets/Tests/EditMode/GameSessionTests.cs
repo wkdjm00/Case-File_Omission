@@ -193,6 +193,8 @@ namespace CaseFileOmission.Tests
             var body = s.Materials.SingleOrDefault(m => m.IsBody && m.SubjectNpcId == target.NpcId);
             Assert.IsNotNull(body, "조사 중 사망한 인물에는 별도 시신 자료가 생긴다.");
             Assert.AreEqual(policeRoom, body.RoomId);
+            Assert.IsTrue(s.GetInvestigationObjects().Any(o => o.ObjectId == body.ObjectId),
+                "동적으로 생성된 시신도 플레이어의 조사 대상 목록에 들어간다.");
             Assert.IsTrue(s.Campaign.PoliceInspectedObjectIds.Contains(body.ObjectId));
             Assert.IsTrue(s.Capacity.GetHeldClues(s.HandlerPoliceId).Contains(body.MaterialId));
             Assert.IsTrue(s.State.EventLog.GetOrdered().Any(e =>
