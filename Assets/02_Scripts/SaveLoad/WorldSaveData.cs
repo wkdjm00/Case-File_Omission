@@ -356,6 +356,7 @@ namespace CaseFileOmission.SaveLoad
         public string RelationshipId;
         public string RepresentativeSubtypeId;
         public string ActualSubtypeId;
+        public MissingPersonCircumstance MissingPersonCircumstance;
         public bool VictimDeparted;
         public bool BodyHidden;
         public bool DelayedDeath;
@@ -449,6 +450,7 @@ namespace CaseFileOmission.SaveLoad
         public string FalsehoodReason;
         public bool IdentifiesPerpetrator;
         public bool IsDirectPerpetratorEvidence;
+        public bool IsBody;
         public string ObjectId;
         public string RequiresClueId;
         public string Title;
@@ -487,6 +489,7 @@ namespace CaseFileOmission.SaveLoad
         public string PresenterId;
         public string ClueId;
         public bool PresenterIsLying;
+        public bool PresenterUsedDistortion;
         public CardQuestionState State;
         public int AdditionalVerificationsUsed;
         public int DeferCount;
@@ -495,7 +498,7 @@ namespace CaseFileOmission.SaveLoad
     [Serializable]
     public sealed class WorldSaveData
     {
-        public const int CurrentVersion = 7;
+        public const int CurrentVersion = 8;
 
         public int Version;
         public EvidenceSaveData Evidence;

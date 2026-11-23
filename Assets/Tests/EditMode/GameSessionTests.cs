@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using CaseFileOmission.Contracts;
+using CaseFileOmission.ContractContent;
 using CaseFileOmission.Core;
+using CaseFileOmission.Evidence;
 using CaseFileOmission.Endings;
 using CaseFileOmission.Game;
 using CaseFileOmission.MainCase;
@@ -30,6 +32,186 @@ namespace CaseFileOmission.Tests
 
         private static Dictionary<string, bool> AllVotes(GameSession s, bool accept) =>
             s.MeetingFlow.ParticipantIds.Where(id => id != s.PlayerId).ToDictionary(id => id, _ => accept);
+
+        [Test]
+        public void AcceptedFalseMaterial_RecordsBelievesFalseWithAcquisitionSource()
+        {
+            var s = StartContract(seed: 61);
+            Assert.IsTrue(s.PassTime(s.State.RemainingTimeSlots).Success);
+            var receiver = s.Npcs.GetByContract(s.CurrentContract.ContractId)
+                .First(n => n.IsAlive && s.Occupancy.HasPosition(n.NpcId));
+            s.Relationships.SetSuspicion(receiver.NpcId, s.PlayerId, 0f);
+
+            var falseMaterial = new EvidenceMaterial
+            {
+                MaterialId = "test-false-card",
+                ContractId = s.CurrentContract.ContractId,
+                Format = ClueFormat.Testimony,
+                TruthStatus = ClueTruthStatus.False,
+                SourceNpcId = s.CurrentContract.Truth.PerpetratorId,
+                Acquisition = MaterialAcquisition.TalkToNpc,
+                Title = "테스트용 거짓 진술",
+                Content = "검증되지 않은 거짓 주장",
+                StatedInfoIds = { "test-false-claim" }
+            };
+            s.Materials.Add(falseMaterial);
+            s.Clues.Discover(falseMaterial.ToClueDefinition());
+            s.Clues.PickUpByPlayer(falseMaterial.MaterialId);
+
+            Assert.IsTrue(s.StartMeeting(new[] { falseMaterial.MaterialId }).Success);
+            var result = s.PresentCard(falseMaterial.MaterialId, CardManipulation.None, lying: false, hasSupportingEvidence: false);
+            Assert.IsTrue(result.Success);
+            Assert.IsTrue(s.LastCardResolution.Judgements.Any(j => j.JudgeId == receiver.NpcId && j.Accepts));
+
+            var record = receiver.InfoHistory.LastOrDefault(r => r.InfoId == "test-false-claim");
+            Assert.IsNotNull(record, "NPC가 거짓 자료를 수용하면 정보 이력이 남아야 한다.");
+            Assert.AreEqual(NpcInformationState.BelievesFalse, record.State);
+            Assert.AreEqual(NpcInfoAcquisitionMethod.Dialogue, record.Method);
+            Assert.AreEqual(falseMaterial.MaterialId, record.SourceEvidenceId);
+            Assert.AreEqual(s.PlayerId, record.SourcePersonId);
+            Assert.IsTrue(record.Minute.HasValue);
+            Assert.IsTrue(record.SourceEventId.StartsWith("npc-false-belief:", StringComparison.Ordinal));
+        }
+
+        [Test]
+        public void AcceptedFalseMaterial_AfterSuccessfulVerification_RecordsBelievesFalse()
+        {
+            var s = StartContract(seed: 62);
+            Assert.IsTrue(s.PassTime(s.State.RemainingTimeSlots).Success);
+            var receiver = s.Npcs.GetByContract(s.CurrentContract.ContractId)
+                .First(n => n.IsAlive && s.Occupancy.HasPosition(n.NpcId));
+
+            var falseMaterial = new EvidenceMaterial
+            {
+                MaterialId = "test-false-card-verified",
+                ContractId = s.CurrentContract.ContractId,
+                Format = ClueFormat.Testimony,
+                TruthStatus = ClueTruthStatus.False,
+                SourceNpcId = s.CurrentContract.Truth.PerpetratorId,
+                Acquisition = MaterialAcquisition.TalkToNpc,
+                Title = "검증 뒤 수용되는 테스트용 거짓 진술",
+                Content = "검증 뒤 수용되는 거짓 주장",
+                StatedInfoIds = { "test-false-claim-verified" }
+            };
+            s.Materials.Add(falseMaterial);
+            s.Clues.Discover(falseMaterial.ToClueDefinition());
+            s.Clues.PickUpByPlayer(falseMaterial.MaterialId);
+            Assert.IsTrue(s.StartMeeting(new[] { falseMaterial.MaterialId }).Success);
+
+            s.Relationships.SetSuspicion(receiver.NpcId, s.PlayerId, 100f);
+            Assert.IsTrue(s.PresentCard(falseMaterial.MaterialId, CardManipulation.None, lying: false, hasSupportingEvidence: false).Success);
+            var question = s.LastCardResolution.OpenedQuestions.First(q => q.JudgeId == receiver.NpcId);
+            Assert.IsNull(receiver.InfoHistory.LastOrDefault(r => r.InfoId == "test-false-claim-verified"),
+                "의문을 제기한 직후에는 잘못된 믿음을 기록하지 않는다.");
+
+            Assert.IsTrue(s.RespondToQuestion(question.QuestionId, success: true).Success);
+            var record = receiver.InfoHistory.LastOrDefault(r => r.InfoId == "test-false-claim-verified");
+            Assert.IsNotNull(record);
+            Assert.AreEqual(NpcInformationState.BelievesFalse, record.State);
+            Assert.AreEqual(falseMaterial.MaterialId, record.SourceEvidenceId);
+        }
+
+        [Test]
+        public void NpcReportsFirsthandInformationToHandlerPoliceOnlyOnce()
+        {
+            var s = StartContract(seed: 71);
+            var reporter = s.Npcs.GetByContract(s.CurrentContract.ContractId)
+                .First(n => n.IsAlive && n.NpcId != s.CurrentContract.Truth.PerpetratorId && s.Occupancy.HasPosition(n.NpcId));
+            string room = s.PlayerRoom;
+            s.Occupancy.PlaceAt(reporter.NpcId, room);
+            s.Occupancy.PlaceAt(s.HandlerPoliceId, room);
+            const string infoId = "test-firsthand-report-fact";
+            const string sourceEventId = "test-firsthand-report-event";
+            reporter.MarkWitnessed(sourceEventId);
+            reporter.LearnInfo(infoId, NpcJudgement.Believe, new NpcInfoRecord
+            {
+                State = NpcInformationState.KnowsFact,
+                Method = NpcInfoAcquisitionMethod.DirectObservation,
+                Minute = s.Campaign.NpcMinute,
+                SourceEventId = sourceEventId
+            });
+
+            var source = new NpcInteractionBehaviorSource(s);
+            var candidate = source.GetCandidates(reporter, room, s.Campaign.NpcMinute)
+                .FirstOrDefault(x => x.Kind == NpcBehaviorKind.Report && x.InfoId == infoId);
+            Assert.IsNotNull(candidate, "직접 목격한 사실은 담당 경찰과 같은 방에서 신고 후보가 된다.");
+
+            candidate.Execute();
+
+            Assert.IsTrue(s.HasNpcReportedInfo(reporter.NpcId, infoId));
+            var report = s.Materials.Single(m => m.MaterialId.StartsWith("npc-report-material:", StringComparison.Ordinal)
+                && m.StatedInfoIds.Contains(infoId));
+            Assert.AreEqual(reporter.NpcId, report.SourceNpcId);
+            Assert.IsTrue(s.Capacity.GetHeldClues(s.HandlerPoliceId).Contains(report.MaterialId));
+            Assert.IsFalse(s.Clues.Exists(report.MaterialId), "경찰에 한 신고 자료를 플레이어에게 자동 지급하지 않는다.");
+            Assert.IsFalse(s.ReportNpcInfoToPolice(reporter.NpcId, infoId, room, s.Campaign.NpcMinute),
+                "같은 NPC·정보의 신고는 한 번만 처리한다.");
+        }
+
+        [Test]
+        public void NpcDoesNotAutomaticallyReportTransferredRumorToPolice()
+        {
+            var s = StartContract(seed: 72);
+            var reporter = s.Npcs.GetByContract(s.CurrentContract.ContractId)
+                .First(n => n.IsAlive && s.Occupancy.HasPosition(n.NpcId));
+            string room = s.PlayerRoom;
+            s.Occupancy.PlaceAt(reporter.NpcId, room);
+            s.Occupancy.PlaceAt(s.HandlerPoliceId, room);
+            const string infoId = "test-transferred-rumor";
+            reporter.LearnInfo(infoId, NpcJudgement.Believe, new NpcInfoRecord
+            {
+                State = NpcInformationState.BelievesTrue,
+                Method = NpcInfoAcquisitionMethod.NpcTransfer,
+                Minute = s.Campaign.NpcMinute,
+                SourceEventId = "rumor-source-event",
+                SourcePersonId = s.Npcs.GetByContract(s.CurrentContract.ContractId)
+                    .First(n => n.NpcId != reporter.NpcId).NpcId
+            });
+
+            var candidates = new NpcInteractionBehaviorSource(s)
+                .GetCandidates(reporter, room, s.Campaign.NpcMinute);
+            Assert.IsFalse(candidates.Any(x => x.Kind == NpcBehaviorKind.Report && x.InfoId == infoId),
+                "NPC 간 전달로 들은 믿음은 직접 목격한 사실로 바꾸어 신고하지 않는다.");
+        }
+
+        [Test]
+        public void PoliceDiscoversNewBodyDuringInvestigation_AndAddsItToPoliceEvidence()
+        {
+            var s = StartContract(seed: 73);
+            var target = s.Npcs.GetByContract(s.CurrentContract.ContractId)
+                .First(n => n.IsAlive
+                    && n.NpcId != s.CurrentContract.Truth.PerpetratorId
+                    && n.NpcId != s.CurrentContract.Truth.VictimId
+                    && s.Occupancy.HasPosition(n.NpcId));
+            string policeRoom = s.Occupancy.GetRoom(s.HandlerPoliceId);
+            s.Occupancy.PlaceAt(target.NpcId, policeRoom);
+            target.MarkDeceased();
+            s.Campaign.LaterVictimIds.Add(target.NpcId);
+
+            Assert.IsTrue(s.PassTime(1).Success);
+
+            var body = s.Materials.SingleOrDefault(m => m.IsBody && m.SubjectNpcId == target.NpcId);
+            Assert.IsNotNull(body, "조사 중 사망한 인물에는 별도 시신 자료가 생긴다.");
+            Assert.AreEqual(policeRoom, body.RoomId);
+            Assert.IsTrue(s.GetInvestigationObjects().Any(o => o.ObjectId == body.ObjectId),
+                "동적으로 생성된 시신도 플레이어의 조사 대상 목록에 들어간다.");
+            Assert.IsTrue(s.Campaign.PoliceInspectedObjectIds.Contains(body.ObjectId));
+            Assert.IsTrue(s.Capacity.GetHeldClues(s.HandlerPoliceId).Contains(body.MaterialId));
+            Assert.IsTrue(s.State.EventLog.GetOrdered().Any(e =>
+                e.EventId == $"police-found-body:{s.CurrentContract.ContractId}:{target.NpcId}"));
+            Assert.IsFalse(s.Clues.Exists(body.MaterialId), "경찰의 시신 발견만으로 플레이어가 단서를 자동 획득하지 않는다.");
+
+            var json = SaveLoad.SaveGameService.ToJson(s.CaptureSave());
+            var loaded = GameSession.Load(
+                SaveLoad.SaveGameService.FromJson(json),
+                new GameSessionConfig { Random = new Random(74) });
+            var restoredBody = loaded.Materials.Single(m => m.MaterialId == body.MaterialId);
+            Assert.IsTrue(restoredBody.IsBody, "시신 자료의 종류는 저장/복원 뒤에도 유지된다.");
+            Assert.IsTrue(loaded.GetInvestigationObjects().Any(o => o.ObjectId == restoredBody.ObjectId),
+                "불러온 뒤에도 시신은 플레이어의 조사 대상으로 남는다.");
+            Assert.IsTrue(loaded.Capacity.GetHeldClues(loaded.HandlerPoliceId).Contains(restoredBody.MaterialId),
+                "경찰이 직접 확보한 시신 자료도 저장/복원된다.");
+        }
 
         [Test]
         public void NewGame_GivesDiaryAtStart_AndDeathReportAfterPrologue()

@@ -28,6 +28,9 @@ namespace CaseFileOmission.Contracts
         public string RepresentativeSubtypeId;
         public string ActualSubtypeId;
 
+        /// <summary>실종 사건의 실제 세부 종류를 구분하는 거주·방문·귀가 상황(실종이 아니면 None).</summary>
+        public MissingPersonCircumstance MissingPersonCircumstance;
+
         /// <summary>피해자가 핵심 사건 뒤 스스로 집을 떠나 소재 미확인(자발적 이탈·은신). 강제 이동이 아니다.</summary>
         public bool VictimDeparted;
 

@@ -192,7 +192,7 @@ namespace CaseFileOmission.SaveLoad
                 CarriedOverQuestions = t.CarriedOverQuestions?.Where(q => q != null && !q.IsClosed).Select(q => new CardQuestionDto
                 {
                     QuestionId = q.QuestionId, JudgeId = q.JudgeId, PresenterId = q.PresenterId, ClueId = q.ClueId,
-                    PresenterIsLying = q.PresenterIsLying, State = q.State, AdditionalVerificationsUsed = q.AdditionalVerificationsUsed,
+                    PresenterIsLying = q.PresenterIsLying, PresenterUsedDistortion = q.PresenterUsedDistortion, State = q.State, AdditionalVerificationsUsed = q.AdditionalVerificationsUsed,
                     DeferCount = q.DeferCount
                 }).ToArray() ?? Array.Empty<CardQuestionDto>(),
                 MainCase = CaptureMainCase(t),
@@ -288,6 +288,7 @@ namespace CaseFileOmission.SaveLoad
                 RelationshipId = c.Truth.RelationshipId,
                 RepresentativeSubtypeId = c.Truth.RepresentativeSubtypeId,
                 ActualSubtypeId = c.Truth.ActualSubtypeId,
+                MissingPersonCircumstance = c.Truth.MissingPersonCircumstance,
                 VictimDeparted = c.Truth.VictimDeparted,
                 BodyHidden = c.Truth.BodyHidden,
                 DelayedDeath = c.Truth.DelayedDeath,
@@ -326,7 +327,8 @@ namespace CaseFileOmission.SaveLoad
             }
 
             if (!IsDefined(d.PrimaryCrimeType) || !IsDefined(d.LocationCategory) || !IsDefined(d.Location)
-                || !IsDefined(d.StartTimeBlock) || !IsDefined(d.CoverUp) || !IsDefined(d.Outcome) || !IsDefined(d.ConditionType))
+                || !IsDefined(d.StartTimeBlock) || !IsDefined(d.CoverUp) || !IsDefined(d.Outcome) || !IsDefined(d.ConditionType)
+                || !IsDefined(d.MissingPersonCircumstance))
             {
                 Log(logger, "SAVE_INVALID_ENUM", "의뢰의 유형·장소·결과 값이 올바르지 않아 의뢰를 복원하지 않습니다.", contractId: d.ContractId);
                 return;
@@ -382,6 +384,7 @@ namespace CaseFileOmission.SaveLoad
             c.Truth.RelationshipId = d.RelationshipId;
             c.Truth.RepresentativeSubtypeId = d.RepresentativeSubtypeId;
             c.Truth.ActualSubtypeId = d.ActualSubtypeId;
+            c.Truth.MissingPersonCircumstance = d.MissingPersonCircumstance;
             c.Truth.VictimDeparted = d.VictimDeparted;
             c.Truth.BodyHidden = d.BodyHidden;
             c.Truth.DelayedDeath = d.DelayedDeath;
@@ -479,6 +482,7 @@ namespace CaseFileOmission.SaveLoad
                     FalsehoodReason = m.FalsehoodReason,
                     IdentifiesPerpetrator = m.IdentifiesPerpetrator,
                     IsDirectPerpetratorEvidence = m.IsDirectPerpetratorEvidence,
+                    IsBody = m.IsBody,
                     ObjectId = m.ObjectId,
                     RequiresClueId = m.RequiresClueId,
                     Title = m.Title,
@@ -601,6 +605,7 @@ namespace CaseFileOmission.SaveLoad
                         IdentifiesPerpetrator = m.IdentifiesPerpetrator,
                         IsDirectPerpetratorEvidence = m.IsDirectPerpetratorEvidence
                             || m.MaterialId.Contains("tool-evidence", StringComparison.Ordinal),
+                        IsBody = m.IsBody,
                         ObjectId = m.ObjectId,
                         RequiresClueId = m.RequiresClueId,
                         Title = m.Title,
@@ -1152,7 +1157,7 @@ namespace CaseFileOmission.SaveLoad
                 t.CarriedOverQuestions.Add(new CardQuestion
                 {
                     QuestionId = d.QuestionId, JudgeId = d.JudgeId, PresenterId = d.PresenterId, ClueId = d.ClueId,
-                    PresenterIsLying = d.PresenterIsLying, State = d.State, AdditionalVerificationsUsed = Math.Max(0, d.AdditionalVerificationsUsed),
+                    PresenterIsLying = d.PresenterIsLying, PresenterUsedDistortion = d.PresenterUsedDistortion, State = d.State, AdditionalVerificationsUsed = Math.Max(0, d.AdditionalVerificationsUsed),
                     DeferCount = Math.Max(0, d.DeferCount)
                 });
             }

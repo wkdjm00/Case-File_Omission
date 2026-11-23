@@ -64,6 +64,9 @@ namespace CaseFileOmission.ContractContent
 
         public bool IdentifiesPerpetrator;
 
+        /// <summary>실제 사망한 인물의 시신 자료인지. 최초 피해자 외에 조사 중 생긴 시신도 구분한다.</summary>
+        public bool IsBody;
+
         /// <summary>가해 행위를 직접 뒷받침하는 물리 자료(예: 실제 범행 도구). 회유 확률 보정의 기준이다.</summary>
         public bool IsDirectPerpetratorEvidence;
 
