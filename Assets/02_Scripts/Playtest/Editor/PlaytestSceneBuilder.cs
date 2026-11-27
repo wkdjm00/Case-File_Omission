@@ -125,7 +125,7 @@ namespace CaseFileOmission.Playtest.Editor
         /// </summary>
         private static GameObject PlaceTelephone(Transform desk)
         {
-            var prefab = Load("Assets/00_Art/00_Prefabs/MainScreen/Telephone.prefab");
+            var prefab = Load("Assets/00_Art/00_Prefabs/MainMenu/Telephone.prefab");
             if (prefab == null) return null;
             var phone = (GameObject)PrefabUtility.InstantiatePrefab(prefab, desk);
             phone.transform.localPosition = DeskView.TelephoneLocalPosition;
